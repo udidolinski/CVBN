@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 GRAY = 0
 RGB = 1
@@ -30,7 +31,7 @@ def detect_key_points(idx):
     detector = cv2.AKAZE_create()
     kps1, des1 = detector.detectAndCompute(img1, None)
     kps2, des2 = detector.detectAndCompute(img2, None)
-    show_key_points(idx, kps1, kps2)
+    #show_key_points(idx, kps1, kps2)
     return des1, des2, img1, np.array(kps1), img2, np.array(kps2)
 
 
@@ -40,11 +41,12 @@ def match_key_points(des1, des2, img1, kps1, img2, kps2):
         dtype=np.uint8)
     brute_force = cv2.BFMatcher(cv2.NORM_L1, crossCheck=True)
     matches = np.array(brute_force.match(des1, des2))
-    random_matches = matches[np.random.randint(len(matches), size=20)]
-    cv2.drawMatches(img1, kps1, img2, kps2, random_matches, res,
-                    flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
-    cv2.imshow("Output matches", res)  # 1.3
-    cv2.waitKey(0)
+    # random_matches = matches[np.random.randint(len(matches), size=20)]
+    # cv2.drawMatches(img1, kps1, img2, kps2, random_matches, res,
+    #                 flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
+    # cv2.imshow("Output matches", res)  # 1.3
+    # cv2.waitKey(0)
+    return matches
 
 
 
@@ -72,8 +74,25 @@ def significance_test(des1, des2, img1, kps1, img2, kps2):
     cv2.waitKey(0)
 
 
+def plot_histogram(deviations):
+    plt.hist(deviations, 50)
+    plt.title("Histogram of deviations between matches")
+    plt.ylabel("Number of matches")
+    plt.xlabel("Deviation from rectified stereo pattern")
+    plt.show()
+
+def histogram_pattern(matches, kps1, kps2):
+    deviations = np.zeros(len(matches))
+    for i, match in enumerate(matches):
+        y1 = kps1[match.queryIdx].pt[1]
+        y2 = kps2[match.trainIdx].pt[1]
+        deviations[i] = abs(y2 - y1)
+    print("The percentage of matches that devaite by more than 2 pixel:", round(100 * (len(deviations[deviations > 2]) / len(deviations)),2))
+    plot_histogram(deviations)
+
 if __name__ == '__main__':
     des1, des2, img1, kps1, img2, kps2 = detect_key_points(0)
-    print_feature_descriptors(des1, des2)
-    match_key_points(des1, des2, img1, kps1, img2, kps2)
-    significance_test(des1, des2, img1, kps1, img2, kps2)
+    # print_feature_descriptors(des1, des2)
+    matches = match_key_points(des1, des2, img1, kps1, img2, kps2)
+    histogram_pattern(matches, kps1, kps2)
+    # significance_test(des1, des2, img1, kps1, img2, kps2)
