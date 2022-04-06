@@ -152,7 +152,7 @@ def compare_to_cv_triangulation(P, Q, p_keypoint, q_keypoint, our_p3d):
     return np.all(np.isclose(our_p3d, cv_p3d))
 
 
-def traingulate_all_points(matches, kps1, kps2):
+def triangulate_all_points(matches, kps1, kps2, img1, img2):
     k, m1, m2 = read_cameras()
     P = k @ m1
     Q = k @ m2
@@ -200,15 +200,70 @@ def plot_triangulations(x, y, z):
     plt.show()
 
 
-if __name__ == '__main__':
-    des1, des2, img1, kps1, img2, kps2 = detect_key_points(0)
-    # print_feature_descriptors(des1, des2)
+def match_stereo_image(img_idx):
+    des1, des2, img1, kps1, img2, kps2 = detect_key_points(img_idx)
     matches = match_key_points(des1, des2, img1, kps1, img2, kps2)
     deviations = histogram_pattern(matches, kps1, kps2)
-    # significance_test(des1, des2, img1, kps1, img2, kps2)
-    good_matches = pattern_reject_matches(0, deviations, kps1, kps2,
+    good_matches = pattern_reject_matches(img_idx, deviations, kps1, kps2,
                                           matches)
-    points = traingulate_all_points(good_matches, kps1, kps2)
-    points = (
-        points.T[(np.abs(points[0]) < 25) & (np.abs(points[2]) < 100)]).T
-    plot_triangulations(points[0], points[1], points[2])
+    # points = traingulate_all_points(good_matches, kps1, kps2, img1, img2)
+    # points = (
+    #     points.T[(np.abs(points[0]) < 25) & (np.abs(points[2]) < 100)]).T
+    # plot_triangulations(points[0], points[1], points[2])
+    return good_matches, kps1, kps2, des1, img1, img2
+
+
+def match_pair_images_points(img_idx1, img_idx2):
+    # $_& -> $ means the left or right image in stereo
+    #        & means the index + 1 of the image
+    matches_1, kps1_1, kps2_1, des1_1, img1_1, img2_1 = match_stereo_image(img_idx1)
+    matches_2, kps1_2, kps2_2, des1_2, img1_2, img2_2 = match_stereo_image(img_idx2)
+    left_left_matches = match_key_points(des1_1, des1_2, img1_1, kps1_1, img1_2, kps1_2)
+    return matches_1, matches_2, left_left_matches, kps1_1, kps2_1,  kps1_2, kps2_2, img1_1, img2_1
+
+def index_dict_matches(matches):
+    return {(match.queryIdx, match.trainIdx):i for i, match in enumerate(matches)}
+
+
+def rodriguez_to_mat(rvec, tvec):
+    rot, _ = cv2.Rodrigues(rvec)
+    return np.hstack((rot, tvec))
+
+
+def pnp(img_idx1, img_idx2):
+    matches_1, matches_2, left_left_matches, kps1_1, kps2_1, kps1_2, kps2_2, img1_1, img2_1 = match_pair_images_points(img_idx1, img_idx2)
+
+    matches_1_dict, matches_2_dict, left_left_matches_dict = index_dict_matches(matches_1),index_dict_matches(matches_2),index_dict_matches(left_left_matches)
+    kps1_2_matches_idx = []
+    good_matches1_idx = []
+    for match1 in matches_1_dict:
+        for match2 in matches_2_dict:
+            if (match1[0], match2[0]) in left_left_matches_dict:
+                kps1_2_matches_idx.append(match2[0])
+                good_matches1_idx.append(matches_1_dict[match1])
+    good_kps = kps1_2[kps1_2_matches_idx][:4]
+    image_points = np.array([kps.pt for kps in good_kps])
+
+    points_3d = traingulate_all_points(matches_1[good_matches1_idx][:4], kps1_1, kps2_1, img1_1, img2_1).T
+
+
+    k = read_cameras()[0]
+    _, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, np.zeros((4,1)), flags=cv2.SOLVEPNP_AP3P)
+    R_t_1_2 = rodriguez_to_mat(rvec, tvec)
+
+
+
+if __name__ == '__main__':
+    # des1, des2, img1, kps1, img2, kps2 = detect_key_points(1)
+    # # print_feature_descriptors(des1, des2)
+    # matches = match_key_points(des1, des2, img1, kps1, img2, kps2)
+    # deviations = histogram_pattern(matches, kps1, kps2)
+    # # significance_test(des1, des2, img1, kps1, img2, kps2)
+    # good_matches = pattern_reject_matches(0, deviations, kps1, kps2,
+    #                                       matches)
+    # points = traingulate_all_points(good_matches, kps1, kps2, img1, img2)
+    # points = (
+    #     points.T[(np.abs(points[0]) < 25) & (np.abs(points[2]) < 100)]).T
+    # plot_triangulations(points[0], points[1], points[2])
+
+    pnp(0, 1)
