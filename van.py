@@ -118,17 +118,17 @@ def pattern_reject_matches(img_idx, deviations, kps1, kps2, matches):
 
 
 def draw_good_and_bad_matches(img1, kps1, good_keypoint1, bad_keypoint1, img2,
-                              kps2, good_keypoint2, bad_keypoint2):
+                              kps2, good_keypoint2, bad_keypoint2, output1_str, output2_str):
     cv2.drawKeypoints(img1, kps1[good_keypoint1], img1, (0, 128, 255))
     cv2.drawKeypoints(img1, kps1[bad_keypoint1], img1, (255, 255, 0))
 
     cv2.drawKeypoints(img2, kps2[good_keypoint2], img2, (0, 128, 255))
     cv2.drawKeypoints(img2, kps2[bad_keypoint2], img2, (255, 255, 0))
-    # cv2.imwrite("pattern_output1.png", img1)
-    # cv2.imwrite("pattern_output2.png", img2)
-    cv2.imshow("Output pattern1", img1)
-    cv2.imshow("Output pattern2", img2)
-    cv2.waitKey(0)
+    cv2.imwrite(f"{output1_str}.png", img1)
+    cv2.imwrite(f"{output2_str}.png", img2)
+    # cv2.imshow(output1_str, img1)
+    # cv2.imshow(output2_str, img2)
+    # cv2.waitKey(0)
 
 
 def read_cameras():
@@ -248,7 +248,7 @@ def pnp(img_idx1, img_idx2):
 
 
     k = read_cameras()[0]
-    _, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, np.zeros((4,1)), flags=cv2.SOLVEPNP_AP3P)
+    _, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None, flags=cv2.SOLVEPNP_AP3P)
     R_t_1_2 = rodriguez_to_mat(rvec, tvec)
     left_1_location = transform_rt_to_location(R_t_1_2)
     return left_1_location, R_t_1_2
@@ -290,6 +290,7 @@ def pnp2(img_idx1, img_idx2):
                 good_matches1_idx.append(matches_1_dict[match1])
     points_3d = triangulate_all_points(matches_1[good_matches1_idx], kps1_1, kps2_1, img1_1, img2_1)
     points_4d = np.vstack((points_3d, np.ones(points_3d.shape[1])))
+
     R_t_1_2 = pnp(img_idx1, img_idx2)[1]
 
     pixels_3d = k @ R_t_1_2 @ points_4d
@@ -308,17 +309,22 @@ def pnp2(img_idx1, img_idx2):
         best_matches_idxs.append(left_left_match_idx)
         best_kps1_1_idxs.append(kps1_1_idx)
 
-    best_matches = left_left_matches[best_matches_idxs]
-    kps1_1_after_4_pts_match = kps1_1[kps1_1_matches_idx]
-    kps1_2_after_4_pts_match = kps1_2[kps1_2_matches_idx]
 
-    bad_keypoint1 = list(set(np.arange(len(kps1_1_matches_idx))) - set(best_kps1_1_idxs))
-    bad_keypoint2 = list(set(np.arange(len(kps1_2_matches_idx))) - set(result2))
+    best_kps1_2_idxs = np.array(kps1_2_matches_idx)[result2]
 
-    draw_good_and_bad_matches(img1_1, kps1_1_after_4_pts_match, best_kps1_1_idxs, bad_keypoint1, img1_2,
-                              kps1_2_after_4_pts_match, result2, bad_keypoint2)
+    bad_keypoint1 = list(set(kps1_1_matches_idx) - set(best_kps1_1_idxs))
+    bad_keypoint2 = list(set(kps1_2_matches_idx) - set(best_kps1_2_idxs))
+
+    im1 = read_images(img_idx1, RGB)[0]
+    im2 = read_images(img_idx2, RGB)[0]
+    draw_good_and_bad_matches(im1, kps1_1, best_kps1_1_idxs, bad_keypoint1, im2,
+                              kps1_2, best_kps1_2_idxs, bad_keypoint2, "left0", "left1")
+
     s = 1
 
+
+def ransac(img_idx1, img_idx2):
+    pass
 
 if __name__ == '__main__':
     # des1, des2, img1, kps1, img2, kps2 = detect_key_points(1)
