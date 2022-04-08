@@ -263,7 +263,19 @@ def pnp(img_idx1, img_idx2, k, p3p=True, inliers_idx=None):
 
     points_3d = triangulate_all_points(matches_1[good_matches1_idx][indices], kps1_1, kps2_1, img1_1, img2_1).T
 
-    _, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None, flags=flag)
+    succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None, flags=flag)
+    while not succeed:
+        print("didnt succeed")
+        indices = np.random.choice(np.arange(len(kps1_2[kps1_2_matches_idx])),
+                                   4, replace=False)
+        good_kps = kps1_2[kps1_2_matches_idx][indices]
+        image_points = np.array([kps.pt for kps in good_kps])
+
+        points_3d = triangulate_all_points(
+            matches_1[good_matches1_idx][indices], kps1_1, kps2_1, img1_1,
+            img2_1).T
+        succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None,
+                                           flags=flag)
     R_t_1_2 = rodriguez_to_mat(rvec, tvec)
     left_1_location = transform_rt_to_location(R_t_1_2)
     return left_1_location, R_t_1_2
@@ -407,8 +419,8 @@ def compute_extrinsic_matrix(transformation_0_to_i, transformation_i_to_i_plus_1
 def trajectory():
     k = read_cameras()[0]
     current_transformation = np.hstack((np.eye(3), np.zeros((3,1))))
-    locations = np.zeros((4, 3))
-    for i in range(3):
+    locations = np.zeros((3450, 3))
+    for i in range(3449):
         print(i)
         transformation_i_to_i_plus_1 = ransac(i, i+1, k)[0]
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
