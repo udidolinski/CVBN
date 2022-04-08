@@ -9,7 +9,7 @@ RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.9
 
 DATA_PATH = r'VAN_ex\dataset\sequences\00\\'
-
+POSES_PATH = r'VAN_ex\dataset\poses\\'
 
 def read_images(idx, color):
     img_name = '{:06d}.png'.format(idx)
@@ -201,12 +201,12 @@ def plot_triangulations(x, y, z):
     ax.set_zlabel("z")
     plt.show()
 
-def plot_trajectury(x, y):
-    plt.scatter(x, y)
+def plot_trajectury(x, y, x2, y2):
+    plt.scatter(x, y, c='blue', s=2)
+    plt.scatter(x2, y2, c='red', s=2)
     plt.xlabel("x")
     plt.ylabel("y")
     plt.show()
-
 
 def match_stereo_image(img_idx):
     des1, des2, img1, kps1, img2, kps2 = detect_key_points(img_idx)
@@ -415,6 +415,21 @@ def compute_extrinsic_matrix(transformation_0_to_i, transformation_i_to_i_plus_1
     new_t = R2 @ t1 + t2
     return np.hstack((new_R, new_t[:,None]))
 
+def read_poses():
+    locations = np.zeros((3450, 3))
+    i = 0
+    with open(POSES_PATH +'00.txt') as f:
+        for l in f.readlines():
+            # if i >= 300:  # for debug
+            #     break
+            l = l.split()
+            extrinsic_matrix = np.array([float(i) for i in l])
+            extrinsic_matrix = extrinsic_matrix.reshape(3,4)
+            ground_truth_loc = transform_rt_to_location(extrinsic_matrix)
+            locations[i] = ground_truth_loc
+            i += 1
+    return locations
+
 
 def trajectory():
     k = read_cameras()[0]
@@ -440,5 +455,6 @@ if __name__ == '__main__':
     #     points.T[(np.abs(points[0]) < 25) & (np.abs(points[2]) < 100)]).T
     # plot_triangulations(points[0], points[1], points[2])
     # print(trajectory())
+    g_t_locations = read_poses().T
     locations = trajectory().T
-    plot_trajectury(locations[0], locations[2])
+    plot_trajectury(locations[0], locations[2], g_t_locations[0], g_t_locations[2])
