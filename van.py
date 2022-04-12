@@ -204,8 +204,10 @@ def plot_triangulations(x, y, z):
 def plot_trajectury(x, y, x2, y2):
     plt.scatter(x, y, c='blue', s=2)
     plt.scatter(x2, y2, c='red', s=2)
-    plt.xlabel("x")
-    plt.ylabel("y")
+    # plt.xlabel("x")
+    # plt.ylabel("y")
+    plt.title("trajecory of left cameras and ground truth locations")
+    plt.legend(('our trajectory', 'ground truth location'))
     plt.show()
 
 def match_stereo_image(img_idx):
@@ -405,7 +407,7 @@ def ransac(img_idx1, img_idx2, k, im2_list):
     max_num_inliers2 = max_num_inliers
     best_compute_lst2 = best_compute_lst
 
-    for j in range(3):
+    for j in range(7):
         pnp_res = pnp(img_idx1, img_idx2, k, False, best_compute_lst[-1], pnp_list=pnp_list[:14])
         current_transformation = pnp_res[1]
         imgs_list = pnp_list[2:5] + pnp_list[6:8] + pnp_list[9:14]
@@ -431,12 +433,12 @@ def compute_extrinsic_matrix(transformation_0_to_i, transformation_i_to_i_plus_1
     return np.hstack((new_R, new_t[:,None]))
 
 def read_poses():
-    locations = np.zeros((10, 3))
+    locations = np.zeros((3450, 3))
     i = 0
     with open(POSES_PATH +'00.txt') as f:
         for l in f.readlines():
-            if i >= 10:  # for debug
-                break
+            # if i >= 10:  # for debug
+            #     break
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
             extrinsic_matrix = extrinsic_matrix.reshape(3,4)
@@ -447,7 +449,7 @@ def read_poses():
 
 
 def trajectory():
-    num_of_camerars = 600
+    num_of_camerars = 3450
     k = read_cameras()[0]
     current_transformation = np.hstack((np.eye(3), np.zeros((3,1))))
     locations = np.zeros((num_of_camerars, 3))
