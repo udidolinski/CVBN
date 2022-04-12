@@ -6,7 +6,7 @@ GRAY = 0
 RGB = 1
 DEVIATION_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
-RANSAC_SUCCESS_PROB = 0.9
+RANSAC_SUCCESS_PROB = 0.95
 
 DATA_PATH = r'VAN_ex\dataset\sequences\00\\'
 POSES_PATH = r'VAN_ex\dataset\poses\\'
@@ -166,7 +166,12 @@ def triangulate_all_points(matches, kps1, kps2, img1, img2):
     for i, match in enumerate(matches):
         p1 = kps1[match.queryIdx]
         p2 = kps2[match.trainIdx]
-        our_p3d, lamda = triangulate_point(P, Q, p1, p2)
+        # our_p3d, lamda = triangulate_point(P, Q, p1, p2)
+
+        cv_p4d = cv2.triangulatePoints(P, Q, p1.pt, p2.pt).squeeze()
+        our_p3d = cv_p4d[:3] / cv_p4d[3]
+        lamda = cv_p4d[3]
+        # our_p3d, lamda = triangulate_point(P, Q, p1, p2)
         # if our_p3d[2] < 0:
         #     print(lamda * our_p3d[0], lamda * our_p3d[1], lamda * our_p3d[2],
         #           lamda)
@@ -239,9 +244,6 @@ def index_dict_matches(matches):
 def rodriguez_to_mat(rvec, tvec):
     rot, _ = cv2.Rodrigues(rvec)
     return np.hstack((rot, tvec))
-
-
-
 
 
 def pnp(img_idx1, img_idx2, k, p3p=True, inliers_idx=None, pnp_list=None):
@@ -394,7 +396,7 @@ def ransac(img_idx1, img_idx2, k, im2_list):
         pnp_res = pnp(img_idx1, img_idx2, k, True, pnp_list=pnp_list[:14])
         current_transformation = pnp_res[1]
         imgs_list = pnp_list[2:5] + pnp_list[6:8] + pnp_list[9:14]
-        current_num_inliers, current_num_outliers, current_compute_lst  = find_inliers(img_idx1, img_idx2, current_transformation, k, imgs_list, *pnp_list[14:])
+        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2, current_transformation, k, imgs_list, *pnp_list[14:])
         if current_num_inliers > max_num_inliers:
             best_transformation = current_transformation
             best_compute_lst = current_compute_lst
@@ -407,8 +409,8 @@ def ransac(img_idx1, img_idx2, k, im2_list):
     max_num_inliers2 = max_num_inliers
     best_compute_lst2 = best_compute_lst
 
-    for j in range(7):
-        pnp_res = pnp(img_idx1, img_idx2, k, False, best_compute_lst[-1], pnp_list=pnp_list[:14])
+    for j in range(5):
+        pnp_res = pnp(img_idx1, img_idx2, k, False, best_compute_lst2[-1], pnp_list=pnp_list[:14])
         current_transformation = pnp_res[1]
         imgs_list = pnp_list[2:5] + pnp_list[6:8] + pnp_list[9:14]
 
