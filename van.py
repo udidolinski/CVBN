@@ -6,7 +6,7 @@ GRAY = 0
 RGB = 1
 DEVIATION_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
-RANSAC_SUCCESS_PROB = 0.95
+RANSAC_SUCCESS_PROB = 0.99
 
 DATA_PATH = r'VAN_ex\dataset\sequences\00\\'
 POSES_PATH = r'VAN_ex\dataset\poses\\'
@@ -282,7 +282,7 @@ def pnp_helper(im1_list, img_idx1, img_idx2):
         left_left_matches)
     matches_kps1_dict = {}
     kps1_2_matches_idx, kps1_1_matches_idx = [], []
-    good_matches1_idx = []
+    good_matches1_idx, good_matches2_idx  = [], []
     for match1 in matches_1_dict:
         for match2 in matches_2_dict:
             if (match1[0], match2[0]) in left_left_matches_dict:
@@ -291,11 +291,12 @@ def pnp_helper(im1_list, img_idx1, img_idx2):
                 matches_kps1_dict[match2[0]] = (
                 match1[0], left_left_matches_dict[(match1[0], match2[0])])
                 good_matches1_idx.append(matches_1_dict[match1])
+                good_matches2_idx.append(matches_2_dict[match2])
     # matches_2, kps1_2, kps2_2, des1_2, img1_2, img2_2
     # -1 7 10 0 3 5
     #      des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2
     #                                 matches_1, matches_2, left_left_matches, kps1_1, kps2_1, kps1_2, kps2_2, img1_1, img2_1, img1_2
-    return des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict
+    return des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict, good_matches2_idx, img2_2
 
 def transform_rt_to_location(R_t):
     R = R_t[:, :3]
@@ -320,19 +321,6 @@ def compute_camera_locations(img_idx1, img_idx2):
 def find_inliers(img_idx1, img_idx2, R_t_1_2, k, imgs_list, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict):
     # img1_1, img1_2, img2_1, kps1_1, kps1_2, kps2_1, kps2_2, left_left_matches, matches_1, matches_2
     img1_1, img1_2, img2_1, kps1_1, kps1_2, kps2_1, kps2_2, left_left_matches, matches_1, matches_2 = imgs_list
-    # k = read_cameras()[0]
-
-    # matches_1_dict, matches_2_dict, left_left_matches_dict = index_dict_matches(matches_1),index_dict_matches(matches_2),index_dict_matches(left_left_matches)
-    # matches_kps1_dict = {}
-    # good_matches1_idx = []
-    # kps1_2_matches_idx, kps1_1_matches_idx = [], []
-    # for match1 in matches_1_dict:
-    #     for match2 in matches_2_dict:
-    #         if (match1[0], match2[0]) in left_left_matches_dict:
-    #             kps1_2_matches_idx.append(match2[0])
-    #             kps1_1_matches_idx.append(match1[0])
-    #             matches_kps1_dict[match2[0]] = (match1[0], left_left_matches_dict[(match1[0], match2[0])])
-    #             good_matches1_idx.append(matches_1_dict[match1])
 
     points_3d = triangulate_all_points(matches_1[good_matches1_idx], kps1_1, kps2_1, img1_1, img2_1)
     points_4d = np.vstack((points_3d, np.ones(points_3d.shape[1])))
@@ -396,7 +384,7 @@ def ransac(img_idx1, img_idx2, k, im2_list):
         pnp_res = pnp(img_idx1, img_idx2, k, True, pnp_list=pnp_list[:14])
         current_transformation = pnp_res[1]
         imgs_list = pnp_list[2:5] + pnp_list[6:8] + pnp_list[9:14]
-        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2, current_transformation, k, imgs_list, *pnp_list[14:])
+        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2, current_transformation, k, imgs_list, *pnp_list[14:-2])
         if current_num_inliers > max_num_inliers:
             best_transformation = current_transformation
             best_compute_lst = current_compute_lst
@@ -416,13 +404,44 @@ def ransac(img_idx1, img_idx2, k, im2_list):
 
         if np.allclose(current_transformation, best_transformation2):
             break
-        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2,current_transformation, k, imgs_list, *pnp_list[14:])
+        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2,current_transformation, k, imgs_list, *pnp_list[14:-2])
         if current_num_inliers > max_num_inliers2:
             best_transformation2 = current_transformation
             max_num_inliers = current_num_inliers
             best_compute_lst2 = current_compute_lst
+    if img_idx1 == 0:
+        compute_2_3d_clouds(best_transformation, pnp_list)
     #present_inliers_and_outliers(*best_compute_lst2)
     return best_transformation, im2_list
+
+def compute_2_3d_clouds(transformation, pnp_list):
+    des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict, good_matches2_idx, img2_2 = pnp_list
+
+    points_3d_pair1 = triangulate_all_points(matches_2[good_matches2_idx], kps1_2, kps2_2, img1_2, img2_2)
+
+    points_3d_pair0 = triangulate_all_points(matches_1[good_matches1_idx], kps1_1, kps2_1, img1_1, img2_1)
+
+
+    points_4d = np.vstack((points_3d_pair0, np.ones(points_3d_pair0.shape[1])))
+    points_3d_pair1_projected = (transformation @ points_4d)
+    points_3d_pair1_projected2 = (points_3d_pair1_projected.T[(np.abs(points_3d_pair1_projected[0]) < 20) & (np.abs(points_3d_pair1_projected[2]) < 100)& (np.abs(points_3d_pair1_projected[1]) < 8)]).T
+
+    points_3d_pair1 = (points_3d_pair1.T[(np.abs(points_3d_pair1[0]) < 20) & (np.abs(points_3d_pair1[2]) < 100)& (np.abs(points_3d_pair1[1]) < 8)]).T
+
+    fig = plt.figure()
+    plt.suptitle("3D point clouds of pair 1 and pair 1 projected from pair 0")
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(points_3d_pair1[0], points_3d_pair1[1], points_3d_pair1[2], c="red", alpha=0.4)
+    ax.scatter(points_3d_pair1_projected2[0], points_3d_pair1_projected2[1], points_3d_pair1_projected2[2], c="blue", alpha=0.4)
+    ax.legend(["pair 1 3D point cloud", "pair 1 projected from pair 0"], loc='upper left')
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+    plt.show()
+
+
+
+    return points_3d_pair1, points_3d_pair1_projected
 
 def compute_extrinsic_matrix(transformation_0_to_i, transformation_i_to_i_plus_1):
     R1 = transformation_0_to_i[:, :3]
