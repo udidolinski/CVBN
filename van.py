@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from image_utils import *
 
 GRAY = 0
 RGB = 1
@@ -10,6 +11,7 @@ RANSAC_SUCCESS_PROB = 0.99
 
 DATA_PATH = r'VAN_ex\dataset\sequences\00\\'
 POSES_PATH = r'VAN_ex\dataset\poses\\'
+
 
 def read_images(idx, color):
     img_name = '{:06d}.png'.format(idx)
@@ -30,27 +32,31 @@ def show_key_points(idx, kps1, kps2):
 
 
 def detect_key_points(idx):
-    img1, img2 = read_images(idx, GRAY)
+    img1_mat, img2_mat = read_images(idx, GRAY)
     detector = cv2.AKAZE_create()
-    kps1, des1 = detector.detectAndCompute(img1, None)
-    kps2, des2 = detector.detectAndCompute(img2, None)
-    # show_key_points(idx, kps1, kps2)
-    return des1, des2, img1, np.array(kps1), img2, np.array(kps2)
+    kps1, des1 = detector.detectAndCompute(img1_mat, None)
+    kps2, des2 = detector.detectAndCompute(img2_mat, None)
+    img1 = Image(img1_mat, np.array(kps1), des1)
+    img2 = Image(img2_mat, np.array(kps2), des2)
+    # show_key_points(idx, img1.kps , img2.kps)
+    return img1, img2
 
 
-def match_key_points(des1, des2, img1, kps1, img2, kps2):
+def match_key_points(img1, img2):
     brute_force = cv2.BFMatcher(cv2.NORM_L1, crossCheck=True)
-    matches = np.array(brute_force.match(des1, des2))
-    random_matches = matches[np.random.randint(len(matches), size=20)]
-    # show_matches(img1, kps1, img2, kps2, random_matches)
+    matches = np.array(brute_force.match(img1.desc, img2.desc))
+    # show_matches(img1, img2, matches)
     return matches
 
 
-def show_matches(img1, kps1, img2, kps2, random_matches):
+def show_matches(img1, img2, matches):
+    random_matches = matches[np.random.randint(len(matches), size=20)]
     res = np.empty(
-        (max(img1.shape[0], img2.shape[0]), img1.shape[1] + img2.shape[1], 3),
+        (max(img1.mat.shape[0], img2.mat.shape[0]),
+         img1.mat.shape[1] + img2.mat.shape[1], 3),
         dtype=np.uint8)
-    cv2.drawMatches(img1, kps1, img2, kps2, random_matches, res,
+    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches,
+                    res,
                     flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
     cv2.imshow("Output matches", res)  # 1.3
     cv2.waitKey(0)
@@ -88,11 +94,11 @@ def plot_histogram(deviations):
     plt.show()
 
 
-def histogram_pattern(matches, kps1, kps2):
-    deviations = np.zeros(len(matches))
-    for i, match in enumerate(matches):
-        y1 = kps1[match.queryIdx].pt[1]
-        y2 = kps2[match.trainIdx].pt[1]
+def histogram_pattern(stereo_pair):
+    deviations = np.zeros(len(stereo_pair.matches))
+    for i, match in enumerate(stereo_pair.matches):
+        y1 = stereo_pair.left_image.kps[match.queryIdx].pt[1]
+        y2 = stereo_pair.right_image.kps[match.trainIdx].pt[1]
         deviations[i] = abs(y2 - y1)
     # print("The percentage of matches that devaite by more than 2 pixel:",
     #       round(100 * (len(deviations[deviations > DEVIATION_THRESHOLD]) / len(
@@ -101,31 +107,35 @@ def histogram_pattern(matches, kps1, kps2):
     return deviations
 
 
-def pattern_reject_matches(img_idx, deviations, kps1, kps2, matches):
-    # img1, img2 = read_images(img_idx, RGB)
-    good_matches = matches[deviations <= DEVIATION_THRESHOLD]
-    bad_matches = matches[deviations > DEVIATION_THRESHOLD]
-    good_keypoint1, good_keypoint2 = [], []
-    bad_keypoint1, bad_keypoint2 = [], []
-    for good_match in good_matches:
-        good_keypoint1.append(good_match.queryIdx)
-        good_keypoint2.append(good_match.trainIdx)
-    for bad_match in bad_matches:
-        bad_keypoint1.append(bad_match.queryIdx)
-        bad_keypoint2.append(bad_match.trainIdx)
+def pattern_reject_matches(deviations, stereo_pair):
+    stereo_pair.set_rectified_inliers_matches_idx(
+        np.where(deviations <= DEVIATION_THRESHOLD)[0])
 
-    # draw_good_and_bad_matches(img1, kps1, good_keypoint1, bad_keypoint1,
-    # img2, kps2, good_keypoint2, bad_keypoint2)
-    return good_matches
+    left_image_rectified_inliers_kps, right_image_rectified_inliers_kps = [], []
+
+    for rectified_inlier_match in stereo_pair.get_rectified_inliers_matches():
+        left_image_rectified_inliers_kps.append(
+            rectified_inlier_match.queryIdx)
+        right_image_rectified_inliers_kps.append(
+            rectified_inlier_match.trainIdx)
+
+    stereo_pair.left_image.set_inliers_kps(left_image_rectified_inliers_kps)
+    stereo_pair.right_image.set_inliers_kps(right_image_rectified_inliers_kps)
+
+    # draw_good_and_bad_matches(stereo_pair, "rectified1", "rectified2")
 
 
-def draw_good_and_bad_matches(img1, kps1, good_keypoint1, bad_keypoint1, img2,
-                              kps2, good_keypoint2, bad_keypoint2, output1_str, output2_str):
-    cv2.drawKeypoints(img1, kps1[good_keypoint1], img1, (0, 128, 255))
-    cv2.drawKeypoints(img1, kps1[bad_keypoint1], img1, (255, 255, 0))
+def draw_good_and_bad_matches(stereo_pair, output1_str, output2_str):
+    img1, img2 = read_images(stereo_pair.idx, RGB)
+    cv2.drawKeypoints(img1, stereo_pair.left_image.get_inliers_kps(), img1,
+                      (0, 128, 255))
+    cv2.drawKeypoints(img1, stereo_pair.left_image.get_outliers_kps(), img1,
+                      (255, 255, 0))
 
-    cv2.drawKeypoints(img2, kps2[good_keypoint2], img2, (0, 128, 255))
-    cv2.drawKeypoints(img2, kps2[bad_keypoint2], img2, (255, 255, 0))
+    cv2.drawKeypoints(img2, stereo_pair.right_image.get_inliers_kps(), img2,
+                      (0, 128, 255))
+    cv2.drawKeypoints(img2, stereo_pair.right_image.get_outliers_kps(), img2,
+                      (255, 255, 0))
     cv2.imwrite(f"{output1_str}.png", img1)
     cv2.imwrite(f"{output2_str}.png", img2)
     # cv2.imshow(output1_str, img1)
@@ -154,34 +164,26 @@ def compare_to_cv_triangulation(P, Q, p_keypoint, q_keypoint, our_p3d):
     return np.all(np.isclose(our_p3d, cv_p3d))
 
 
-def triangulate_all_points(matches, kps1, kps2, img1, img2):
+def is_our_triangulate_equal_cv(P, Q, p1, p2):
+    our_p3d, lamda = triangulate_point(P, Q, p1, p2)
+    return compare_to_cv_triangulation(P, Q, p1, p2, our_p3d)
+
+
+def triangulate_all_points(matches, stereo_pair):
     k, m1, m2 = read_cameras()
     P = k @ m1
     Q = k @ m2
     points = np.zeros((len(matches), 3))
     equal = True
-    res = np.empty(
-        (max(img1.shape[0], img2.shape[0]), img1.shape[1] + img2.shape[1], 3),
-        dtype=np.uint8)
     for i, match in enumerate(matches):
-        p1 = kps1[match.queryIdx]
-        p2 = kps2[match.trainIdx]
-        # our_p3d, lamda = triangulate_point(P, Q, p1, p2)
-
+        p1 = stereo_pair.left_image.kps[match.queryIdx]
+        p2 = stereo_pair.right_image.kps[match.trainIdx]
         cv_p4d = cv2.triangulatePoints(P, Q, p1.pt, p2.pt).squeeze()
-        our_p3d = cv_p4d[:3] / cv_p4d[3]
-        lamda = cv_p4d[3]
-        # our_p3d, lamda = triangulate_point(P, Q, p1, p2)
-        # if our_p3d[2] < 0:
-        #     print(lamda * our_p3d[0], lamda * our_p3d[1], lamda * our_p3d[2],
-        #           lamda)
-        #     cv2.drawMatches(img1, kps1, img2, kps2, [match], res,
-        #                 flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
-        #     cv2.imwrite("outlier_match2.png", res)
-        # equal = equal and compare_to_cv_triangulation(P, Q, p1, p2, our_p3d)
-        points[i] = our_p3d
+        cv_p3d = cv_p4d[:3] / cv_p4d[3]
+        # equal = equal and is_our_triangulate_equal_cv(P, Q, p1, p2)
+        points[i] = cv_p3d
 
-    result_string = {False: "doesn't equal", True: "equals"}
+    # result_string = {False: "doesn't equal", True: "equals"}
     # print(f"Our triangulation {result_string[equal]} to cv triangulation")
     return points.T
 
@@ -206,6 +208,7 @@ def plot_triangulations(x, y, z):
     ax.set_zlabel("z")
     plt.show()
 
+
 def plot_trajectury(x, y, x2, y2):
     plt.scatter(x, y, c='blue', s=2)
     plt.scatter(x2, y2, c='red', s=2)
@@ -215,102 +218,119 @@ def plot_trajectury(x, y, x2, y2):
     plt.legend(('our trajectory', 'ground truth location'))
     plt.show()
 
+
 def match_stereo_image(img_idx):
-    des1, des2, img1, kps1, img2, kps2 = detect_key_points(img_idx)
-    matches = match_key_points(des1, des2, img1, kps1, img2, kps2)
-    deviations = histogram_pattern(matches, kps1, kps2)
-    good_matches = pattern_reject_matches(img_idx, deviations, kps1, kps2,
-                                          matches)
-    # points = traingulate_all_points(good_matches, kps1, kps2, img1, img2)
-    # points = (
-    #     points.T[(np.abs(points[0]) < 25) & (np.abs(points[2]) < 100)]).T
-    # plot_triangulations(points[0], points[1], points[2])
-    return good_matches, kps1, kps2, des1, img1, img2
+    img1, img2 = detect_key_points(img_idx)
+    matches = match_key_points(img1, img2)
+    stereo_pair = StereoPair(img1, img2, img_idx, matches)
+    deviations = histogram_pattern(stereo_pair)
+    pattern_reject_matches(deviations, stereo_pair)
+    return stereo_pair
 
 
-def match_pair_images_points(img_idx1, img_idx2, img1_list=None):
-    # $_& -> $ means the left or right image in stereo
-    #        & means the index + 1 of the image
-    if img1_list is None:
-        matches_1, kps1_1, kps2_1, des1_1, img1_1, img2_1 = match_stereo_image(img_idx1)
+def match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair1=None):
+    if curr_stereo_pair1 is None:
+        stereo_pair1 = match_stereo_image(img_idx1)
     else:
-        matches_1, kps1_1, kps2_1, des1_1, img1_1, img2_1 = img1_list
-    matches_2, kps1_2, kps2_2, des1_2, img1_2, img2_2 = match_stereo_image(img_idx2)
-    left_left_matches = match_key_points(des1_1, des1_2, img1_1, kps1_1, img1_2, kps1_2)
-    return matches_1, matches_2, left_left_matches, kps1_1, kps2_1,  kps1_2, kps2_2, img1_1, img2_1, img1_2, des1_2, img2_2
+        stereo_pair1 = curr_stereo_pair1
+    stereo_pair2 = match_stereo_image(img_idx2)
+    left_left_matches = match_key_points(stereo_pair1.left_image,
+                                         stereo_pair2.left_image)
+    return Quad(stereo_pair1, stereo_pair2, left_left_matches)
+
+
 def index_dict_matches(matches):
-    return {(match.queryIdx, match.trainIdx):i for i, match in enumerate(matches)}
+    return {(match.queryIdx, match.trainIdx): i for i, match in
+            enumerate(matches)}
+
 
 def rodriguez_to_mat(rvec, tvec):
     rot, _ = cv2.Rodrigues(rvec)
     return np.hstack((rot, tvec))
 
 
-def pnp(img_idx1, img_idx2, k, p3p=True, inliers_idx=None, pnp_list=None):
-    des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2 = pnp_list
+def pnp(k, p3p=True, inliers_idx=None, quad=None):
     indices = inliers_idx
     flag = cv2.SOLVEPNP_EPNP
     if p3p:
-        indices = np.random.choice(np.arange(len(kps1_2[kps1_2_matches_idx])), 4, replace=False)
+        indices = np.random.choice(np.arange(
+            len(quad.stereo_pair2.left_image.get_quad_inliers_kps())), 4,
+                                   replace=False)
         flag = cv2.SOLVEPNP_AP3P
-    good_kps = kps1_2[kps1_2_matches_idx][indices]
-    image_points = np.array([kps.pt for kps in good_kps])
-    points_3d = triangulate_all_points(matches_1[good_matches1_idx][indices], kps1_1, kps2_1, img1_1, img2_1).T
-    succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None, flags=flag)
+    good_kps = quad.stereo_pair2.left_image.get_quad_inliers_kps()[indices]
+    image_points = np.array([kp.pt for kp in good_kps])
+    points_3d = triangulate_all_points(
+        quad.stereo_pair1.get_quad_inliers_matches()[indices],
+        quad.stereo_pair1).T
+    succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None,
+                                       flags=flag)
     while not succeed:
-        print("didnt succeed")
-        indices = np.random.choice(np.arange(len(kps1_2[kps1_2_matches_idx])),
-                                   4, replace=False)
-        good_kps = kps1_2[kps1_2_matches_idx][indices]
+        print("didn't succeed")
+        indices = np.random.choice(np.arange(
+            len(quad.stereo_pair2.left_image.get_quad_inliers_kps())), 4,
+                                   replace=False)
+        good_kps = quad.stereo_pair2.left_image.get_quad_inliers_kps()[indices]
         image_points = np.array([kps.pt for kps in good_kps])
-
         points_3d = triangulate_all_points(
-            matches_1[good_matches1_idx][indices], kps1_1, kps2_1, img1_1,
-            img2_1).T
+            quad.stereo_pair1.get_quad_inliers_matches()[indices],
+            quad.stereo_pair1).T
         succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None,
                                            flags=flag)
-    R_t_1_2 = rodriguez_to_mat(rvec, tvec)
-    left_1_location = transform_rt_to_location(R_t_1_2)
-    return left_1_location, R_t_1_2, matches_1, matches_2, left_left_matches, kps1_1, kps2_1, kps1_2, kps2_2, img1_1, img2_1, img1_2, des1_2, img2_2
+    R_t = rodriguez_to_mat(rvec, tvec)
+    pair2_left_camera_location = transform_rt_to_location(R_t)
+    return pair2_left_camera_location, R_t
 
 
-def pnp_helper(im1_list, img_idx1, img_idx2):
-    matches_1, matches_2, left_left_matches, kps1_1, kps2_1, kps1_2, kps2_2, img1_1, img2_1, img1_2, des1_2, img2_2 = match_pair_images_points(
-        img_idx1, img_idx2, im1_list)
+def pnp_helper(img_idx1, img_idx2, curr_stereo_pair2):
+    quad = match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair2)
+    # todo maybe reuse matches dict from last pair
     matches_1_dict, matches_2_dict, left_left_matches_dict = index_dict_matches(
-        matches_1), index_dict_matches(matches_2), index_dict_matches(
-        left_left_matches)
-    matches_kps1_dict = {}
-    kps1_2_matches_idx, kps1_1_matches_idx = [], []
-    good_matches1_idx, good_matches2_idx  = [], []
+        quad.stereo_pair1.get_rectified_inliers_matches()), index_dict_matches(
+        quad.stereo_pair2.get_rectified_inliers_matches()), index_dict_matches(
+        quad.left_left_matches)
+    left_left_kps_idx_dict = {}
+    stereo_pair1_left_image_quad_inliers_kps_idx, stereo_pair2_left_image_quad_inliers_kps_idx = [], []
+    stereo_pair1_quad_inliers_idx, stereo_pair2_quad_inliers_idx = [], []
     for match1 in matches_1_dict:
         for match2 in matches_2_dict:
             if (match1[0], match2[0]) in left_left_matches_dict:
-                kps1_2_matches_idx.append(match2[0])
-                kps1_1_matches_idx.append(match1[0])
-                matches_kps1_dict[match2[0]] = (
-                match1[0], left_left_matches_dict[(match1[0], match2[0])])
-                good_matches1_idx.append(matches_1_dict[match1])
-                good_matches2_idx.append(matches_2_dict[match2])
-    # matches_2, kps1_2, kps2_2, des1_2, img1_2, img2_2
-    # -1 7 10 0 3 5
-    #      des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2
-    #                                 matches_1, matches_2, left_left_matches, kps1_1, kps2_1, kps1_2, kps2_2, img1_1, img2_1, img1_2
-    return des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict, good_matches2_idx, img2_2
+                stereo_pair1_left_image_quad_inliers_kps_idx.append(match1[0])
+                stereo_pair2_left_image_quad_inliers_kps_idx.append(match2[0])
+
+                left_left_kps_idx_dict[match2[0]] = match1[0]
+
+                stereo_pair1_quad_inliers_idx.append(matches_1_dict[match1])
+                stereo_pair2_quad_inliers_idx.append(matches_2_dict[match2])
+    quad.stereo_pair1.left_image.set_quad_inliers_kps_idx(
+        stereo_pair1_left_image_quad_inliers_kps_idx)
+    quad.stereo_pair2.left_image.set_quad_inliers_kps_idx(
+        stereo_pair2_left_image_quad_inliers_kps_idx)
+
+    quad.stereo_pair1.set_quad_inliers_matches_idx(
+        stereo_pair1_quad_inliers_idx)
+    quad.stereo_pair2.set_quad_inliers_matches_idx(
+        stereo_pair2_quad_inliers_idx)
+
+    quad.set_left_left_kps_idx_dict(left_left_kps_idx_dict)
+    return quad
+
 
 def transform_rt_to_location(R_t):
     R = R_t[:, :3]
     t = R_t[:, 3]
     return R.T @ (-t)
+
+
 def compute_camera_locations(img_idx1, img_idx2):
     k, m1, m2 = read_cameras()
-    left_0_location = transform_rt_to_location(m1)[:,None]
-    right_0_location = transform_rt_to_location(m2)[:,None]
-    left_1_location = pnp(img_idx1, img_idx2, k)[0][:,None]
+    left_0_location = transform_rt_to_location(m1)[:, None]
+    right_0_location = transform_rt_to_location(m2)[:, None]
+    left_1_location = pnp(img_idx1, img_idx2, k)[0][:, None]
     right_1_location = (left_1_location + right_0_location)
 
-    points = np.hstack((left_0_location, right_0_location, left_1_location, right_1_location))
-    #
+    points = np.hstack(
+        (left_0_location, right_0_location, left_1_location, right_1_location))
+
     # print("left 0:",points.T[0])
     # print("right 0:", points.T[1])
     # print("left 1:", points.T[2])
@@ -318,132 +338,145 @@ def compute_camera_locations(img_idx1, img_idx2):
     plot_triangulations(points[0], points[1], points[2])
 
 
-def find_inliers(img_idx1, img_idx2, R_t_1_2, k, imgs_list, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict):
-    # img1_1, img1_2, img2_1, kps1_1, kps1_2, kps2_1, kps2_2, left_left_matches, matches_1, matches_2
-    img1_1, img1_2, img2_1, kps1_1, kps1_2, kps2_1, kps2_2, left_left_matches, matches_1, matches_2 = imgs_list
-
-    points_3d = triangulate_all_points(matches_1[good_matches1_idx], kps1_1, kps2_1, img1_1, img2_1)
+def find_inliers(quad, k, current_transformation):
+    points_3d = triangulate_all_points(
+        quad.stereo_pair1.get_quad_inliers_matches(), quad.stereo_pair1)
     points_4d = np.vstack((points_3d, np.ones(points_3d.shape[1])))
 
-    # R_t_1_2 = pnp(img_idx1, img_idx2)[1]
-
-    model_pixels_2d = perform_transformation_3d_points_to_pixels(R_t_1_2, k, points_4d)
-    real_pixels_2d = np.array([point.pt for point in kps1_2[kps1_2_matches_idx]]).T
+    model_pixels_2d = perform_transformation_3d_points_to_pixels(
+        current_transformation, k, points_4d)
+    real_pixels_2d = np.array([point.pt for point in
+                               quad.stereo_pair2.left_image.get_quad_inliers_kps()]).T
     diff_real_and_model = np.abs(real_pixels_2d - model_pixels_2d)
-    inliers_idx = np.where((diff_real_and_model[0] < 2) & (diff_real_and_model[1] < 2))[0]
+    inliers_idx = \
+    np.where((diff_real_and_model[0] < 2) & (diff_real_and_model[1] < 2))[0]
 
-    # present_inliers_and_outliers(img_idx1, img_idx2, kps1_1,
-    #                              kps1_1_matches_idx, kps1_2,
-    #                              kps1_2_matches_idx, matches_kps1_dict,
-    #                              inliers_idx)
+    return len(inliers_idx), diff_real_and_model.shape[1] - len(
+        inliers_idx), inliers_idx
 
-    return len(inliers_idx), diff_real_and_model.shape[1] - len(inliers_idx), [img_idx1, img_idx2, kps1_1,
-                             kps1_1_matches_idx, kps1_2,
-                             kps1_2_matches_idx, matches_kps1_dict,
-                             inliers_idx]
+
 def perform_transformation_3d_points_to_pixels(R_t_1_2, k, points_4d):
     pixels_3d = k @ R_t_1_2 @ points_4d
     pixels_3d[0] /= pixels_3d[2]
     pixels_3d[1] /= pixels_3d[2]
     model_pixels_2d = pixels_3d[:2]
     return model_pixels_2d
-def present_inliers_and_outliers(img_idx1, img_idx2, kps1_1,
-                                 kps1_1_matches_idx, kps1_2,
-                                 kps1_2_matches_idx, matches_kps1_dict,
-                                 result2):
-    best_matches_idxs = []
-    best_kps1_1_idxs = []
-    for idx in result2:
-        kps1_1_idx, left_left_match_idx = matches_kps1_dict[kps1_2_matches_idx[idx]]
-        best_matches_idxs.append(left_left_match_idx)
-        best_kps1_1_idxs.append(kps1_1_idx)
-    best_kps1_2_idxs = np.array(kps1_2_matches_idx)[result2]
-    bad_keypoint1 = list(set(kps1_1_matches_idx) - set(best_kps1_1_idxs))
-    bad_keypoint2 = list(set(kps1_2_matches_idx) - set(best_kps1_2_idxs))
-    im1 = read_images(img_idx1, RGB)[0]
-    im2 = read_images(img_idx2, RGB)[0]
-    draw_good_and_bad_matches(im1, kps1_1, best_kps1_1_idxs, bad_keypoint1,
+
+
+def present_inliers_and_outliers(quad):
+    # todo change this
+
+    stereo_pair1_inliers_left_image_kps_idx = []
+    for idx in quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx():
+        stereo_pair1_left_image_idx = quad.get_left_left_kps_idx_dict()[
+            quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
+        stereo_pair1_inliers_left_image_kps_idx.append(
+            stereo_pair1_left_image_idx)
+    stereo_pair2_inliers_left_image_kps_idx = \
+    quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[
+        quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx()]
+    bad_keypoint1 = list(
+        set(quad.stereo_pair1.left_image.get_quad_inliers_kps_idx()) - set(
+            stereo_pair1_inliers_left_image_kps_idx))
+    bad_keypoint2 = list(
+        set(quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()) - set(
+            stereo_pair2_inliers_left_image_kps_idx))
+    im1 = read_images(quad.stereo_pair1.idx, RGB)[0]
+    im2 = read_images(quad.stereo_pair2.idx, RGB)[0]
+    draw_good_and_bad_matches(im1, kps1_1,
+                              stereo_pair1_inliers_left_image_kps_idx,
+                              bad_keypoint1,
                               im2,
-                              kps1_2, best_kps1_2_idxs, bad_keypoint2, "left0",
+                              kps1_2, stereo_pair2_inliers_left_image_kps_idx,
+                              bad_keypoint2, "left0",
                               "left1")
+
+
 def compute_num_of_iter(p, epsilon, s):
-    return np.log(1-p) / np.log(1 - ((1 - epsilon)**s))
-def ransac(img_idx1, img_idx2, k, im2_list):
+    return np.log(1 - p) / np.log(1 - ((1 - epsilon) ** s))
+
+
+def ransac(img_idx1, img_idx2, k, curr_stereo_pair2):
     s = RANSAC_NUM_SAMPLES
     p = RANSAC_SUCCESS_PROB
     epsilon = 0.85
     num_iter = compute_num_of_iter(p, epsilon, s)
     max_num_inliers = 0
-    best_transformation = None
-    best_compute_lst = []
-    pnp_list = pnp_helper(im2_list, img_idx1, img_idx2)
-    im2_list = pnp_list[13], pnp_list[7], pnp_list[10], pnp_list[0], pnp_list[3], pnp_list[5]
+    quad = pnp_helper(img_idx1, img_idx2, curr_stereo_pair2)
     # Repeat 1
     i = 0
     while i <= num_iter:
-        pnp_res = pnp(img_idx1, img_idx2, k, True, pnp_list=pnp_list[:14])
-        current_transformation = pnp_res[1]
-        imgs_list = pnp_list[2:5] + pnp_list[6:8] + pnp_list[9:14]
-        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2, current_transformation, k, imgs_list, *pnp_list[14:-2])
+        pair2_left_camera_location, current_transformation = pnp(k, True,
+                                                                 quad=quad)
+        current_num_inliers, current_num_outliers, current_inliers_idx = find_inliers(
+            quad, k, current_transformation)
         if current_num_inliers > max_num_inliers:
-            best_transformation = current_transformation
-            best_compute_lst = current_compute_lst
+            quad.set_relative_trans(current_transformation)
+            quad.stereo_pair2.left_image.set_pnp_inliers_kps_idx(
+                current_inliers_idx)
             max_num_inliers = current_num_inliers
-            new_epsilon = current_num_outliers / (current_num_inliers + current_num_outliers)
+            new_epsilon = current_num_outliers / (
+                        current_num_inliers + current_num_outliers)
             num_iter = compute_num_of_iter(p, new_epsilon, s)
-        i+=1
+        i += 1
     # Repeat 2
-    best_transformation2 = best_transformation
-    max_num_inliers2 = max_num_inliers
-    best_compute_lst2 = best_compute_lst
 
     for j in range(5):
-        pnp_res = pnp(img_idx1, img_idx2, k, False, best_compute_lst2[-1], pnp_list=pnp_list[:14])
-        current_transformation = pnp_res[1]
-        imgs_list = pnp_list[2:5] + pnp_list[6:8] + pnp_list[9:14]
-
-        if np.allclose(current_transformation, best_transformation2):
+        pair2_left_camera_location, current_transformation = pnp(k, False,
+                                                                 quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx(),
+                                                                 quad)
+        current_num_inliers, current_num_outliers, current_inliers_idx = find_inliers(
+            quad, k, current_transformation)
+        if np.allclose(current_transformation, quad.get_relative_trans()):
             break
-        current_num_inliers, current_num_outliers, current_compute_lst = find_inliers(img_idx1, img_idx2,current_transformation, k, imgs_list, *pnp_list[14:-2])
-        if current_num_inliers > max_num_inliers2:
-            best_transformation2 = current_transformation
+        if current_num_inliers > max_num_inliers:
+            quad.set_relative_trans(current_transformation)
+            quad.stereo_pair2.left_image.set_pnp_inliers_kps_idx(
+                current_inliers_idx)
             max_num_inliers = current_num_inliers
-            best_compute_lst2 = current_compute_lst
     if img_idx1 == 0:
-        compute_2_3d_clouds(best_transformation, pnp_list)
-    #present_inliers_and_outliers(*best_compute_lst2)
-    return best_transformation, im2_list
-
-def compute_2_3d_clouds(transformation, pnp_list):
-    des1_2, good_matches1_idx, img1_1, img1_2, img2_1, img2_2, kps1_1, kps1_2, kps1_2_matches_idx, kps2_1, kps2_2, left_left_matches, matches_1, matches_2, good_matches1_idx, kps1_1_matches_idx, kps1_2_matches_idx, matches_kps1_dict, good_matches2_idx, img2_2 = pnp_list
-
-    points_3d_pair1 = triangulate_all_points(matches_2[good_matches2_idx], kps1_2, kps2_2, img1_2, img2_2)
-
-    points_3d_pair0 = triangulate_all_points(matches_1[good_matches1_idx], kps1_1, kps2_1, img1_1, img2_1)
+        compute_2_3d_clouds(quad.get_relative_trans(), quad)
+    # present_inliers_and_outliers(*best_compute_lst2)
+    return quad.get_relative_trans(), quad.stereo_pair2
 
 
-    points_4d = np.vstack((points_3d_pair0, np.ones(points_3d_pair0.shape[1])))
-    points_3d_pair1_projected = (transformation @ points_4d)
-    points_3d_pair1_projected2 = (points_3d_pair1_projected.T[(np.abs(points_3d_pair1_projected[0]) < 20) & (np.abs(points_3d_pair1_projected[2]) < 100)& (np.abs(points_3d_pair1_projected[1]) < 8)]).T
+def compute_2_3d_clouds(transformation, quad):
+    points_3d_pair2 = triangulate_all_points(
+        quad.stereo_pair2.get_quad_inliers_matches(), quad.stereo_pair2)
 
-    points_3d_pair1 = (points_3d_pair1.T[(np.abs(points_3d_pair1[0]) < 20) & (np.abs(points_3d_pair1[2]) < 100)& (np.abs(points_3d_pair1[1]) < 8)]).T
+    points_3d_pair1 = triangulate_all_points(
+        quad.stereo_pair1.get_quad_inliers_matches(), quad.stereo_pair1)
+
+    points_4d = np.vstack((points_3d_pair1, np.ones(points_3d_pair1.shape[1])))
+    points_3d_pair2_projected = (transformation @ points_4d)
+    points_3d_pair2_projected2 = (points_3d_pair2_projected.T[
+        (np.abs(points_3d_pair2_projected[0]) < 20) & (
+                    np.abs(points_3d_pair2_projected[2]) < 100) & (
+                    np.abs(points_3d_pair2_projected[1]) < 8)]).T
+
+    points_3d_pair2 = (points_3d_pair2.T[(np.abs(points_3d_pair2[0]) < 20) & (
+                np.abs(points_3d_pair2[2]) < 100) & (np.abs(
+        points_3d_pair2[1]) < 8)]).T
 
     fig = plt.figure()
-    plt.suptitle("3D point clouds of pair 1 and pair 1 projected from pair 0")
+    plt.suptitle("3D point clouds of pair 2 and pair 2 projected from pair 1")
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(points_3d_pair1[0], points_3d_pair1[1], points_3d_pair1[2], c="red", alpha=0.4)
-    ax.scatter(points_3d_pair1_projected2[0], points_3d_pair1_projected2[1], points_3d_pair1_projected2[2], c="blue", alpha=0.4)
-    ax.legend(["pair 1 3D point cloud", "pair 1 projected from pair 0"], loc='upper left')
+    ax.scatter(points_3d_pair2[0], points_3d_pair2[1], points_3d_pair2[2],
+               c="red", alpha=0.4)
+    ax.scatter(points_3d_pair2_projected2[0], points_3d_pair2_projected2[1],
+               points_3d_pair2_projected2[2], c="blue", alpha=0.4)
+    ax.legend(["pair 2 3D point cloud", "pair 2 projected from pair 1"],
+              loc='upper left')
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_zlabel("z")
     plt.show()
 
+    return points_3d_pair2, points_3d_pair2_projected
 
 
-    return points_3d_pair1, points_3d_pair1_projected
-
-def compute_extrinsic_matrix(transformation_0_to_i, transformation_i_to_i_plus_1):
+def compute_extrinsic_matrix(transformation_0_to_i,
+                             transformation_i_to_i_plus_1):
     R1 = transformation_0_to_i[:, :3]
     t1 = transformation_0_to_i[:, 3]
     R2 = transformation_i_to_i_plus_1[:, :3]
@@ -451,18 +484,19 @@ def compute_extrinsic_matrix(transformation_0_to_i, transformation_i_to_i_plus_1
 
     new_R = R2 @ R1
     new_t = R2 @ t1 + t2
-    return np.hstack((new_R, new_t[:,None]))
+    return np.hstack((new_R, new_t[:, None]))
+
 
 def read_poses():
     locations = np.zeros((3450, 3))
     i = 0
-    with open(POSES_PATH +'00.txt') as f:
+    with open(POSES_PATH + '00.txt') as f:
         for l in f.readlines():
-            # if i >= 10:  # for debug
+            # if i >= 500:  # for debug
             #     break
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
-            extrinsic_matrix = extrinsic_matrix.reshape(3,4)
+            extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
             ground_truth_loc = transform_rt_to_location(extrinsic_matrix)
             locations[i] = ground_truth_loc
             i += 1
@@ -472,35 +506,27 @@ def read_poses():
 def trajectory():
     num_of_camerars = 3450
     k = read_cameras()[0]
-    current_transformation = np.hstack((np.eye(3), np.zeros((3,1))))
+    current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     locations = np.zeros((num_of_camerars, 3))
-    im2_list = None
-    for i in range(num_of_camerars-1):
+    curr_stereo_pair2 = None
+    for i in range(num_of_camerars - 1):
         print(i)
-        transformation_i_to_i_plus_1, im2_list = ransac(i, i+1, k, im2_list)
-        transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
-        locations[i+1] = transform_rt_to_location(transformation_0_to_i_plus_1)
+        transformation_i_to_i_plus_1, curr_stereo_pair2 = ransac(i, i + 1, k,
+                                                                 curr_stereo_pair2)
+        transformation_0_to_i_plus_1 = compute_extrinsic_matrix(
+            current_transformation, transformation_i_to_i_plus_1)
+        locations[i + 1] = transform_rt_to_location(
+            transformation_0_to_i_plus_1)
         current_transformation = transformation_0_to_i_plus_1
     return locations
-if __name__ == '__main__':
-    # des1, des2, img1, kps1, img2, kps2 = detect_key_points(1)
-    # # print_feature_descriptors(des1, des2)
-    # matches = match_key_points(des1, des2, img1, kps1, img2, kps2)
-    # deviations = histogram_pattern(matches, kps1, kps2)
-    # # significance_test(des1, des2, img1, kps1, img2, kps2)
-    # good_matches = pattern_reject_matches(0, deviations, kps1, kps2,
-    #                                       matches)
-    # points = traingulate_all_points(good_matches, kps1, kps2, img1, img2)
-    # points = (
-    #     points.T[(np.abs(points[0]) < 25) & (np.abs(points[2]) < 100)]).T
-    # plot_triangulations(points[0], points[1], points[2])
-    # print(trajectory())
-    import time
 
+
+if __name__ == '__main__':
+    import time
 
     now = time.time()
     g_t_locations = read_poses().T
     locations = trajectory().T
-    plot_trajectury(locations[0], locations[2], g_t_locations[0], g_t_locations[2])
+    plot_trajectury(locations[0], locations[2], g_t_locations[0],
+                    g_t_locations[2])
     print(time.time() - now)
-
