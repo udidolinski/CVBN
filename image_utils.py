@@ -3,8 +3,10 @@ from enum import IntEnum
 
 
 class FilterMethod(IntEnum):
-    NO_FILTER = 0
-    # need to fill out more
+    RECTIFICATION = 0
+    QUAD = 1
+    PNP = 2
+
 
 
 
@@ -16,14 +18,30 @@ class Image:
         self.inliers_kps_idx = np.zeros(1)
         self.quad_inliers_kps_idx = np.zeros(1)
         self.pnp_inliers_kps_idx = np.zeros(1)
+        self.inliers_filter_funcs = [self.get_rectification_inliers_kps, self.get_quad_inliers_kps, self.get_pnp_inliers_kps]
+        self.inliers_idx_filter_funcs = [self.get_rectification_inliers_idx,
+                                     self.get_quad_inliers_kps_idx,
+                                     self.get_pnp_inliers_kps_idx]
+        self.outliers_filter_funcs = 1
 
-    def is_rgb(self):
+    def __is_rgb(self):
         return self.mat.ndim == 3
 
-    def get_inliers_kps(self):
+    def get_inliers_kps(self, filter_kind: FilterMethod):
+        return self.inliers_filter_funcs[filter_kind]()
+
+    def get_inliers_kps_idx(self, filter_kind: FilterMethod):
+        return self.inliers_idx_filter_funcs[filter_kind]()
+
+    def get_ouliers_kps(self):
+        return self.kps[self.get_outliers_idx()]
+
+
+
+    def get_rectification_inliers_kps(self):
         return self.kps[self.inliers_kps_idx]
 
-    def get_inliers_idx(self):
+    def get_rectification_inliers_idx(self):
         return self.inliers_kps_idx
 
     def set_inliers_kps(self, new_inliers_kp_idx):
@@ -33,7 +51,7 @@ class Image:
         all_idx = {i for i in range(len(self.kps))}
         return np.array(all_idx - self.inliers_kps_idx)
 
-    def get_outliers_kps(self):
+    def get_rectification_outliers_kps(self):
         return self.kps[self.get_outliers_idx()]
 
 
@@ -48,8 +66,6 @@ class Image:
         self.quad_inliers_kps_idx = quad_inliers_kps_idx
 
 
-
-
     def get_pnp_inliers_kps_idx(self):
         return self.pnp_inliers_kps_idx
 
@@ -61,16 +77,16 @@ class Image:
 
 
 class StereoPair:
-    def __init__(self, left_image, right_image, idx, matches=None):
+    def __init__(self, left_image:Image, right_image:Image, idx, matches=None):
         self.left_image = left_image
         self.right_image = right_image
         self.idx = idx
         self.matches = matches
-        self.__rectified_inliers_matches_idx = []
+        self.__rectified_inliers_matches_idx = np.zeros(1)
         self.__quad_inliers_matches_idx = []
         self.pnp_inliers_matches_idx = []
         self.filter_matches_funcs = []
-        self.filter_method = FilterMethod.NO_FILTER
+        # self.filter_method = FilterMethod.NO_FILTER
 
     def get_rectified_inliers_matches(self):
         return self.matches[self.__rectified_inliers_matches_idx]

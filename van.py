@@ -94,7 +94,7 @@ def plot_histogram(deviations):
     plt.show()
 
 
-def histogram_pattern(stereo_pair):
+def histogram_pattern(stereo_pair:StereoPair):
     deviations = np.zeros(len(stereo_pair.matches))
     for i, match in enumerate(stereo_pair.matches):
         y1 = stereo_pair.left_image.kps[match.queryIdx].pt[1]
@@ -125,16 +125,16 @@ def pattern_reject_matches(deviations, stereo_pair):
     # draw_good_and_bad_matches(stereo_pair, "rectified1", "rectified2")
 
 
-def draw_good_and_bad_matches(stereo_pair, output1_str, output2_str):
+def draw_good_and_bad_matches(stereo_pair: StereoPair, output1_str, output2_str):
     img1, img2 = read_images(stereo_pair.idx, RGB)
-    cv2.drawKeypoints(img1, stereo_pair.left_image.get_inliers_kps(), img1,
+    cv2.drawKeypoints(img1, stereo_pair.left_image.get_inliers_kps(FilterMethod.RECTIFICATION), img1,
                       (0, 128, 255))
-    cv2.drawKeypoints(img1, stereo_pair.left_image.get_outliers_kps(), img1,
+    cv2.drawKeypoints(img1, stereo_pair.left_image.get_rectification_outliers_kps(), img1,
                       (255, 255, 0))
 
-    cv2.drawKeypoints(img2, stereo_pair.right_image.get_inliers_kps(), img2,
+    cv2.drawKeypoints(img2, stereo_pair.right_image.get_inliers_kps(FilterMethod.RECTIFICATION), img2,
                       (0, 128, 255))
-    cv2.drawKeypoints(img2, stereo_pair.right_image.get_outliers_kps(), img2,
+    cv2.drawKeypoints(img2, stereo_pair.right_image.get_rectification_outliers_kps(), img2,
                       (255, 255, 0))
     cv2.imwrite(f"{output1_str}.png", img1)
     cv2.imwrite(f"{output2_str}.png", img2)
@@ -249,39 +249,31 @@ def rodriguez_to_mat(rvec, tvec):
     return np.hstack((rot, tvec))
 
 
-def pnp(k, p3p=True, inliers_idx=None, quad=None):
-    indices = inliers_idx
+def pnp_helper(quad, k, indices, p3p=True):
     flag = cv2.SOLVEPNP_EPNP
     if p3p:
-        indices = np.random.choice(np.arange(
-            len(quad.stereo_pair2.left_image.get_quad_inliers_kps())), 4,
-                                   replace=False)
+        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4, replace=False)
         flag = cv2.SOLVEPNP_AP3P
-    good_kps = quad.stereo_pair2.left_image.get_quad_inliers_kps()[indices]
-    image_points = np.array([kp.pt for kp in good_kps])
+    good_kps = quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)[indices]
+    image_points = np.array([kps.pt for kps in good_kps])
     points_3d = triangulate_all_points(
         quad.stereo_pair1.get_quad_inliers_matches()[indices],
         quad.stereo_pair1).T
-    succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None,
-                                       flags=flag)
+    succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None, flags=flag)
+    return succeed, rvec, tvec
+
+
+def pnp(k, p3p=True, inliers_idx=None, quad=None):
+    succeed, rvec, tvec = pnp_helper(quad, k, inliers_idx, p3p)
     while not succeed:
         print("didn't succeed")
-        indices = np.random.choice(np.arange(
-            len(quad.stereo_pair2.left_image.get_quad_inliers_kps())), 4,
-                                   replace=False)
-        good_kps = quad.stereo_pair2.left_image.get_quad_inliers_kps()[indices]
-        image_points = np.array([kps.pt for kps in good_kps])
-        points_3d = triangulate_all_points(
-            quad.stereo_pair1.get_quad_inliers_matches()[indices],
-            quad.stereo_pair1).T
-        succeed, rvec, tvec = cv2.solvePnP(points_3d, image_points, k, None,
-                                           flags=flag)
+        succeed, rvec, tvec = pnp_helper(quad, k, inliers_idx, p3p)
     R_t = rodriguez_to_mat(rvec, tvec)
     pair2_left_camera_location = transform_rt_to_location(R_t)
     return pair2_left_camera_location, R_t
 
 
-def pnp_helper(img_idx1, img_idx2, curr_stereo_pair2):
+def create_quad(img_idx1, img_idx2, curr_stereo_pair2):
     quad = match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair2)
     # todo maybe reuse matches dict from last pair
     matches_1_dict, matches_2_dict, left_left_matches_dict = index_dict_matches(
@@ -346,7 +338,7 @@ def find_inliers(quad, k, current_transformation):
     model_pixels_2d = perform_transformation_3d_points_to_pixels(
         current_transformation, k, points_4d)
     real_pixels_2d = np.array([point.pt for point in
-                               quad.stereo_pair2.left_image.get_quad_inliers_kps()]).T
+                               quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)]).T
     diff_real_and_model = np.abs(real_pixels_2d - model_pixels_2d)
     inliers_idx = \
     np.where((diff_real_and_model[0] < 2) & (diff_real_and_model[1] < 2))[0]
@@ -368,10 +360,8 @@ def present_inliers_and_outliers(quad):
 
     stereo_pair1_inliers_left_image_kps_idx = []
     for idx in quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx():
-        stereo_pair1_left_image_idx = quad.get_left_left_kps_idx_dict()[
-            quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
-        stereo_pair1_inliers_left_image_kps_idx.append(
-            stereo_pair1_left_image_idx)
+        stereo_pair1_left_image_idx = quad.get_left_left_kps_idx_dict()[quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
+        stereo_pair1_inliers_left_image_kps_idx.append(stereo_pair1_left_image_idx)
     stereo_pair2_inliers_left_image_kps_idx = \
     quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[
         quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx()]
@@ -395,6 +385,19 @@ def present_inliers_and_outliers(quad):
 def compute_num_of_iter(p, epsilon, s):
     return np.log(1 - p) / np.log(1 - ((1 - epsilon) ** s))
 
+def ransac_helper(quad, k, max_num_inliers, p3p, p, s, num_iter, pnp_inliers=None):
+    pair2_left_camera_location, current_transformation = pnp(k, p3p, pnp_inliers, quad)
+    current_num_inliers, current_num_outliers, current_inliers_idx = find_inliers(quad, k, current_transformation)
+    if not p3p and np.allclose(current_transformation, quad.get_relative_trans()):
+        return max_num_inliers, num_iter, True
+    if current_num_inliers > max_num_inliers:
+        quad.set_relative_trans(current_transformation)
+        quad.stereo_pair2.left_image.set_pnp_inliers_kps_idx(current_inliers_idx)
+        max_num_inliers = current_num_inliers
+        new_epsilon = current_num_outliers / (current_num_inliers + current_num_outliers)
+        num_iter = compute_num_of_iter(p, new_epsilon, s)
+    return max_num_inliers, num_iter, False
+
 
 def ransac(img_idx1, img_idx2, k, curr_stereo_pair2):
     s = RANSAC_NUM_SAMPLES
@@ -402,40 +405,19 @@ def ransac(img_idx1, img_idx2, k, curr_stereo_pair2):
     epsilon = 0.85
     num_iter = compute_num_of_iter(p, epsilon, s)
     max_num_inliers = 0
-    quad = pnp_helper(img_idx1, img_idx2, curr_stereo_pair2)
+    quad = create_quad(img_idx1, img_idx2, curr_stereo_pair2)
     # Repeat 1
     i = 0
     while i <= num_iter:
-        pair2_left_camera_location, current_transformation = pnp(k, True,
-                                                                 quad=quad)
-        current_num_inliers, current_num_outliers, current_inliers_idx = find_inliers(
-            quad, k, current_transformation)
-        if current_num_inliers > max_num_inliers:
-            quad.set_relative_trans(current_transformation)
-            quad.stereo_pair2.left_image.set_pnp_inliers_kps_idx(
-                current_inliers_idx)
-            max_num_inliers = current_num_inliers
-            new_epsilon = current_num_outliers / (
-                        current_num_inliers + current_num_outliers)
-            num_iter = compute_num_of_iter(p, new_epsilon, s)
+        max_num_inliers, num_iter = ransac_helper(quad, k, max_num_inliers, True, p, s, num_iter)[:2]
         i += 1
     # Repeat 2
-
     for j in range(5):
-        pair2_left_camera_location, current_transformation = pnp(k, False,
-                                                                 quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx(),
-                                                                 quad)
-        current_num_inliers, current_num_outliers, current_inliers_idx = find_inliers(
-            quad, k, current_transformation)
-        if np.allclose(current_transformation, quad.get_relative_trans()):
+        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s, num_iter, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
+        if is_transformation_close:
             break
-        if current_num_inliers > max_num_inliers:
-            quad.set_relative_trans(current_transformation)
-            quad.stereo_pair2.left_image.set_pnp_inliers_kps_idx(
-                current_inliers_idx)
-            max_num_inliers = current_num_inliers
-    if img_idx1 == 0:
-        compute_2_3d_clouds(quad.get_relative_trans(), quad)
+    # if img_idx1 == 0:
+    #     compute_2_3d_clouds(quad.get_relative_trans(), quad)
     # present_inliers_and_outliers(*best_compute_lst2)
     return quad.get_relative_trans(), quad.stereo_pair2
 
@@ -530,3 +512,4 @@ if __name__ == '__main__':
     plot_trajectury(locations[0], locations[2], g_t_locations[0],
                     g_t_locations[2])
     print(time.time() - now)
+
