@@ -94,7 +94,7 @@ def plot_histogram(deviations):
     plt.show()
 
 
-def histogram_pattern(stereo_pair:StereoPair):
+def histogram_pattern(stereo_pair: StereoPair):
     deviations = np.zeros(len(stereo_pair.matches))
     for i, match in enumerate(stereo_pair.matches):
         y1 = stereo_pair.left_image.kps[match.queryIdx].pt[1]
@@ -239,9 +239,7 @@ def match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair1=None):
     return Quad(stereo_pair1, stereo_pair2, left_left_matches)
 
 
-def index_dict_matches(matches):
-    return {(match.queryIdx, match.trainIdx): i for i, match in
-            enumerate(matches)}
+
 
 
 def rodriguez_to_mat(rvec, tvec):
@@ -252,7 +250,8 @@ def rodriguez_to_mat(rvec, tvec):
 def pnp_helper(quad, k, indices, p3p=True):
     flag = cv2.SOLVEPNP_EPNP
     if p3p:
-        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4, replace=False)
+        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4,
+                                   replace=False)
         flag = cv2.SOLVEPNP_AP3P
     good_kps = quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)[indices]
     image_points = np.array([kps.pt for kps in good_kps])
@@ -273,6 +272,9 @@ def pnp(k, p3p=True, inliers_idx=None, quad=None):
     return pair2_left_camera_location, R_t
 
 
+def index_dict_matches(matches):
+    return {(match.queryIdx, match.trainIdx): i for i, match in enumerate(matches)}
+
 def create_quad(img_idx1, img_idx2, curr_stereo_pair2):
     quad = match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair2)
     # todo maybe reuse matches dict from last pair
@@ -281,6 +283,8 @@ def create_quad(img_idx1, img_idx2, curr_stereo_pair2):
         quad.stereo_pair2.get_rectified_inliers_matches()), index_dict_matches(
         quad.left_left_matches)
     left_left_kps_idx_dict = {}
+    left_right_img_kps_idx_dict1 = {}
+    left_right_img_kps_idx_dict2 = {}
     stereo_pair1_left_image_quad_inliers_kps_idx, stereo_pair2_left_image_quad_inliers_kps_idx = [], []
     stereo_pair1_quad_inliers_idx, stereo_pair2_quad_inliers_idx = [], []
     for match1 in matches_1_dict:
@@ -290,18 +294,19 @@ def create_quad(img_idx1, img_idx2, curr_stereo_pair2):
                 stereo_pair2_left_image_quad_inliers_kps_idx.append(match2[0])
 
                 left_left_kps_idx_dict[match2[0]] = match1[0]
+                left_right_img_kps_idx_dict1[match1[0]] = match1[1]
+                left_right_img_kps_idx_dict2[match2[0]] = match2[1]
 
                 stereo_pair1_quad_inliers_idx.append(matches_1_dict[match1])
                 stereo_pair2_quad_inliers_idx.append(matches_2_dict[match2])
-    quad.stereo_pair1.left_image.set_quad_inliers_kps_idx(
-        stereo_pair1_left_image_quad_inliers_kps_idx)
-    quad.stereo_pair2.left_image.set_quad_inliers_kps_idx(
-        stereo_pair2_left_image_quad_inliers_kps_idx)
+    quad.stereo_pair1.left_image.set_quad_inliers_kps_idx( stereo_pair1_left_image_quad_inliers_kps_idx)
+    quad.stereo_pair2.left_image.set_quad_inliers_kps_idx(stereo_pair2_left_image_quad_inliers_kps_idx)
 
-    quad.stereo_pair1.set_quad_inliers_matches_idx(
-        stereo_pair1_quad_inliers_idx)
-    quad.stereo_pair2.set_quad_inliers_matches_idx(
-        stereo_pair2_quad_inliers_idx)
+    quad.stereo_pair1.set_left_right_kps_idx_dict(left_right_img_kps_idx_dict1)
+    quad.stereo_pair2.set_left_right_kps_idx_dict(left_right_img_kps_idx_dict2)
+
+    quad.stereo_pair1.set_quad_inliers_matches_idx(stereo_pair1_quad_inliers_idx)
+    quad.stereo_pair2.set_quad_inliers_matches_idx(stereo_pair2_quad_inliers_idx)
 
     quad.set_left_left_kps_idx_dict(left_left_kps_idx_dict)
     return quad
@@ -341,7 +346,7 @@ def find_inliers(quad, k, current_transformation):
                                quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)]).T
     diff_real_and_model = np.abs(real_pixels_2d - model_pixels_2d)
     inliers_idx = \
-    np.where((diff_real_and_model[0] < 2) & (diff_real_and_model[1] < 2))[0]
+        np.where((diff_real_and_model[0] < 2) & (diff_real_and_model[1] < 2))[0]
 
     return len(inliers_idx), diff_real_and_model.shape[1] - len(
         inliers_idx), inliers_idx
@@ -360,11 +365,12 @@ def present_inliers_and_outliers(quad):
 
     stereo_pair1_inliers_left_image_kps_idx = []
     for idx in quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx():
-        stereo_pair1_left_image_idx = quad.get_left_left_kps_idx_dict()[quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
+        stereo_pair1_left_image_idx = quad.get_left_left_kps_idx_dict()[
+            quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
         stereo_pair1_inliers_left_image_kps_idx.append(stereo_pair1_left_image_idx)
     stereo_pair2_inliers_left_image_kps_idx = \
-    quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[
-        quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx()]
+        quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[
+            quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx()]
     bad_keypoint1 = list(
         set(quad.stereo_pair1.left_image.get_quad_inliers_kps_idx()) - set(
             stereo_pair1_inliers_left_image_kps_idx))
@@ -384,6 +390,7 @@ def present_inliers_and_outliers(quad):
 
 def compute_num_of_iter(p, epsilon, s):
     return np.log(1 - p) / np.log(1 - ((1 - epsilon) ** s))
+
 
 def ransac_helper(quad, k, max_num_inliers, p3p, p, s, num_iter, pnp_inliers=None):
     pair2_left_camera_location, current_transformation = pnp(k, p3p, pnp_inliers, quad)
@@ -413,13 +420,13 @@ def ransac(img_idx1, img_idx2, k, curr_stereo_pair2):
         i += 1
     # Repeat 2
     for j in range(5):
-        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s, num_iter, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
+        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s,num_iter, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
         if is_transformation_close:
             break
     # if img_idx1 == 0:
     #     compute_2_3d_clouds(quad.get_relative_trans(), quad)
     # present_inliers_and_outliers(*best_compute_lst2)
-    return quad.get_relative_trans(), quad.stereo_pair2
+    return quad
 
 
 def compute_2_3d_clouds(transformation, quad):
@@ -433,11 +440,11 @@ def compute_2_3d_clouds(transformation, quad):
     points_3d_pair2_projected = (transformation @ points_4d)
     points_3d_pair2_projected2 = (points_3d_pair2_projected.T[
         (np.abs(points_3d_pair2_projected[0]) < 20) & (
-                    np.abs(points_3d_pair2_projected[2]) < 100) & (
-                    np.abs(points_3d_pair2_projected[1]) < 8)]).T
+                np.abs(points_3d_pair2_projected[2]) < 100) & (
+                np.abs(points_3d_pair2_projected[1]) < 8)]).T
 
     points_3d_pair2 = (points_3d_pair2.T[(np.abs(points_3d_pair2[0]) < 20) & (
-                np.abs(points_3d_pair2[2]) < 100) & (np.abs(
+            np.abs(points_3d_pair2[2]) < 100) & (np.abs(
         points_3d_pair2[1]) < 8)]).T
 
     fig = plt.figure()
@@ -485,6 +492,10 @@ def read_poses():
     return locations
 
 
+
+
+
+
 def trajectory():
     num_of_camerars = 3450
     k = read_cameras()[0]
@@ -493,23 +504,57 @@ def trajectory():
     curr_stereo_pair2 = None
     for i in range(num_of_camerars - 1):
         print(i)
-        transformation_i_to_i_plus_1, curr_stereo_pair2 = ransac(i, i + 1, k,
-                                                                 curr_stereo_pair2)
-        transformation_0_to_i_plus_1 = compute_extrinsic_matrix(
-            current_transformation, transformation_i_to_i_plus_1)
-        locations[i + 1] = transform_rt_to_location(
-            transformation_0_to_i_plus_1)
+        current_quad = ransac(i, i + 1, k, curr_stereo_pair2)
+        yield current_quad
+        transformation_i_to_i_plus_1, curr_stereo_pair2 = current_quad.get_relative_trans(), current_quad.stereo_pair2
+        transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
+        locations[i + 1] = transform_rt_to_location( transformation_0_to_i_plus_1)
         current_transformation = transformation_0_to_i_plus_1
     return locations
 
 
+# EX4 start
+
+def gen_track_id():
+    i = 0
+    while True:
+        yield i
+        i += 1
+
+
+def create_track(latest_tracks, inliers_idx, quad: Quad, track_id_gen):
+    frame_id = quad.stereo_pair1.idx
+    for idx in inliers_idx:
+        for track in latest_tracks:
+            if track.last_pair == quad.stereo_pair1.idx-1 and  track.last_kp_idx == quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]:
+                track_id = track.track_id
+                break
+        else:
+            track_id = next(track_id_gen)
+            new_track = Track(track_id, quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx], quad.stereo_pair1.idx)
+            latest_tracks.append(new_track)
+
+        pair1_left_img_kp_idx = quad.left_left_kps_idx_dict[quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
+        pair1_right_img_kp_idx = quad.stereo_pair1.get_left_right_kps_idx_dict()[pair1_left_img_kp_idx]
+
+        x_l = quad.stereo_pair1.left_image.kps[pair1_left_img_kp_idx].pt[0]
+        x_r = quad.stereo_pair1.right_image.kps[pair1_right_img_kp_idx].pt[0]
+        y = quad.stereo_pair1.left_image.kps[pair1_left_img_kp_idx].pt[1]
+        yield track_id, frame_id, x_l, x_r, y
+
+
+
+
+def create_database():
+    latest_tracks = []
+    gen = gen_track_id()
+    for quad in trajectory():
+        for track_id, frame_id, x_l, x_r, y in create_track(latest_tracks, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen):
+            print(track_id, frame_id, x_l, x_r, y)
+
+
+# EX4 end
+
+
 if __name__ == '__main__':
-    import time
-
-    now = time.time()
-    g_t_locations = read_poses().T
-    locations = trajectory().T
-    plot_trajectury(locations[0], locations[2], g_t_locations[0],
-                    g_t_locations[2])
-    print(time.time() - now)
-
+    create_database()

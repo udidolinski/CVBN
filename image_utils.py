@@ -8,8 +8,6 @@ class FilterMethod(IntEnum):
     PNP = 2
 
 
-
-
 class Image:
     def __init__(self, mat, kp=None, desc=None):
         self.mat = mat
@@ -18,10 +16,11 @@ class Image:
         self.inliers_kps_idx = np.zeros(1)
         self.quad_inliers_kps_idx = np.zeros(1)
         self.pnp_inliers_kps_idx = np.zeros(1)
-        self.inliers_filter_funcs = [self.get_rectification_inliers_kps, self.get_quad_inliers_kps, self.get_pnp_inliers_kps]
+        self.inliers_filter_funcs = [self.get_rectification_inliers_kps, self.get_quad_inliers_kps,
+                                     self.get_pnp_inliers_kps]
         self.inliers_idx_filter_funcs = [self.get_rectification_inliers_idx,
-                                     self.get_quad_inliers_kps_idx,
-                                     self.get_pnp_inliers_kps_idx]
+                                         self.get_quad_inliers_kps_idx,
+                                         self.get_pnp_inliers_kps_idx]
         self.outliers_filter_funcs = 1
 
     def __is_rgb(self):
@@ -35,8 +34,6 @@ class Image:
 
     def get_ouliers_kps(self):
         return self.kps[self.get_outliers_idx()]
-
-
 
     def get_rectification_inliers_kps(self):
         return self.kps[self.inliers_kps_idx]
@@ -54,8 +51,6 @@ class Image:
     def get_rectification_outliers_kps(self):
         return self.kps[self.get_outliers_idx()]
 
-
-
     def get_quad_inliers_kps(self):
         return self.kps[self.quad_inliers_kps_idx]
 
@@ -64,7 +59,6 @@ class Image:
 
     def set_quad_inliers_kps_idx(self, quad_inliers_kps_idx):
         self.quad_inliers_kps_idx = quad_inliers_kps_idx
-
 
     def get_pnp_inliers_kps_idx(self):
         return self.pnp_inliers_kps_idx
@@ -77,7 +71,7 @@ class Image:
 
 
 class StereoPair:
-    def __init__(self, left_image:Image, right_image:Image, idx, matches=None):
+    def __init__(self, left_image: Image, right_image: Image, idx, matches=None):
         self.left_image = left_image
         self.right_image = right_image
         self.idx = idx
@@ -86,6 +80,7 @@ class StereoPair:
         self.__quad_inliers_matches_idx = []
         self.pnp_inliers_matches_idx = []
         self.filter_matches_funcs = []
+        self.left_right_kps_idx_dict = {}
         # self.filter_method = FilterMethod.NO_FILTER
 
     def get_rectified_inliers_matches(self):
@@ -111,10 +106,16 @@ class StereoPair:
         return list(set(self.__rectified_inliers_matches_idx) - set(
             self.__rectified_inliers_matches_idx[self.pnp_inliers_matches_idx]))
 
+    def set_left_right_kps_idx_dict(self, left_right_kps_idx_dict):
+        self.left_right_kps_idx_dict = left_right_kps_idx_dict
+
+    def get_left_right_kps_idx_dict(self):
+        return self.left_right_kps_idx_dict
+
 
 class Quad:
 
-    def __init__(self, stereo_pair1: StereoPair, stereo_pair2: StereoPair, left_left_matches=None) :
+    def __init__(self, stereo_pair1: StereoPair, stereo_pair2: StereoPair, left_left_matches=None):
         self.stereo_pair1 = stereo_pair1
         self.stereo_pair2 = stereo_pair2
         self.left_left_matches = left_left_matches
@@ -135,3 +136,17 @@ class Quad:
 
     def get_relative_trans(self):
         return self.relative_trans
+
+class Track:
+
+    def __init__(self, track_id, kp_idx, pair_id):
+        self.track_id = track_id
+        self.last_kp_idx = kp_idx
+        self.last_pair = pair_id
+
+    def set_last_pair_id(self, pair_id):
+        self.last_pair = pair_id
+
+    def set_last_kp_idx(self, kp_idx):
+        self.last_kp_idx = kp_idx
+
