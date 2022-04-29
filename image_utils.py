@@ -1,6 +1,7 @@
 import numpy as np
 from enum import IntEnum
-
+from collections import namedtuple
+from typing import List
 
 class FilterMethod(IntEnum):
     RECTIFICATION = 0
@@ -137,12 +138,17 @@ class Quad:
     def get_relative_trans(self):
         return self.relative_trans
 
+
+TrackInstance = namedtuple("TrackInstance", ["x_l", "x_r", "y"])
+
 class Track:
 
     def __init__(self, track_id, kp_idx, pair_id):
         self.track_id = track_id
         self.last_kp_idx = kp_idx
         self.last_pair = pair_id
+        self.frame_ids = []
+        self.track_instances = []
 
     def set_last_pair_id(self, pair_id):
         self.last_pair = pair_id
@@ -150,3 +156,15 @@ class Track:
     def set_last_kp_idx(self, kp_idx):
         self.last_kp_idx = kp_idx
 
+    def __gt__(self, other):
+        return len(self.frame_ids) > other
+
+class Frame:
+    def __init__(self, frame_id):
+        self.frame_id = frame_id
+        self.track_ids = []
+
+class DataBase:
+    def __init__(self, tracks: List[Track], frames: List[Frame]):
+        self.tracks = tracks
+        self.frames = frames

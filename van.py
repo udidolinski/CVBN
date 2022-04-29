@@ -2,6 +2,8 @@ import cv2
 import pandas as pd
 import matplotlib.pyplot as plt
 from image_utils import *
+import pickle
+from typing import List
 
 GRAY = 0
 RGB = 1
@@ -239,9 +241,6 @@ def match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair1=None):
     return Quad(stereo_pair1, stereo_pair2, left_left_matches)
 
 
-
-
-
 def rodriguez_to_mat(rvec, tvec):
     rot, _ = cv2.Rodrigues(rvec)
     return np.hstack((rot, tvec))
@@ -250,7 +249,8 @@ def rodriguez_to_mat(rvec, tvec):
 def pnp_helper(quad, k, indices, p3p=True):
     flag = cv2.SOLVEPNP_EPNP
     if p3p:
-        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4,replace=False)
+        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4,
+                                   replace=False)
         flag = cv2.SOLVEPNP_AP3P
     good_kps = quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)[indices]
     image_points = np.array([kps.pt for kps in good_kps])
@@ -271,6 +271,7 @@ def pnp(k, p3p=True, inliers_idx=None, quad=None):
 
 def index_dict_matches(matches):
     return {(match.queryIdx, match.trainIdx): i for i, match in enumerate(matches)}
+
 
 def create_quad(img_idx1, img_idx2, curr_stereo_pair2):
     quad = match_pair_images_points(img_idx1, img_idx2, curr_stereo_pair2)
@@ -296,7 +297,7 @@ def create_quad(img_idx1, img_idx2, curr_stereo_pair2):
 
                 stereo_pair1_quad_inliers_idx.append(matches_1_dict[match1])
                 stereo_pair2_quad_inliers_idx.append(matches_2_dict[match2])
-    quad.stereo_pair1.left_image.set_quad_inliers_kps_idx( stereo_pair1_left_image_quad_inliers_kps_idx)
+    quad.stereo_pair1.left_image.set_quad_inliers_kps_idx(stereo_pair1_left_image_quad_inliers_kps_idx)
     quad.stereo_pair2.left_image.set_quad_inliers_kps_idx(stereo_pair2_left_image_quad_inliers_kps_idx)
 
     quad.stereo_pair1.set_left_right_kps_idx_dict(left_right_img_kps_idx_dict1)
@@ -417,7 +418,10 @@ def ransac(img_idx1, img_idx2, k, curr_stereo_pair2):
         i += 1
     # Repeat 2
     for j in range(5):
-        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s,num_iter, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
+        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s,
+                                                                           num_iter,
+                                                                           quad.stereo_pair2.left_image.get_inliers_kps_idx(
+                                                                               FilterMethod.PNP))
         if is_transformation_close:
             break
     # if img_idx1 == 0:
@@ -489,10 +493,6 @@ def read_poses():
     return locations
 
 
-
-
-
-
 def trajectory():
     num_of_camerars = 30
     k = read_cameras()[0]
@@ -507,43 +507,44 @@ def trajectory():
         yield current_quad
         transformation_i_to_i_plus_1, curr_stereo_pair2 = current_quad.get_relative_trans(), current_quad.stereo_pair2
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
-        locations[i + 1] = transform_rt_to_location( transformation_0_to_i_plus_1)
+        locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)
         current_transformation = transformation_0_to_i_plus_1
     return locations
 
 
 # EX4 start
 
-def gen_track_id():
-    i = 0
+def gen_track_id(index):
     while True:
-        yield i
-        i += 1
+        yield index
+        index += 1
 
 
 def get_idx_in_kp_left_image_pair2(quad, idx):
-    #######quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]
     return quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]
+
 
 def get_left_image_pair1_kps_idx(quad, idx):
     return quad.left_left_kps_idx_dict[quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
 
-def  get_right_image_pair_kps_idx(pair, pair1_left_img_kp_idx):
+
+def get_right_image_pair_kps_idx(pair, pair1_left_img_kp_idx):
     return pair.get_left_right_kps_idx_dict()[pair1_left_img_kp_idx]
 
-def create_track(latest_tracks, inliers_idx, quad: Quad, track_id_gen):
 
+def create_track(latest_tracks, frames, inliers_idx, quad: Quad, track_id_gen):
     for idx in inliers_idx:
-        left_track_fields = None
         track_index = -1
         for i, track in enumerate(latest_tracks):
-            if track.last_pair == quad.stereo_pair1.idx and track.last_kp_idx == get_left_image_pair1_kps_idx(quad, idx):
+            if track.last_pair == quad.stereo_pair1.idx and track.last_kp_idx == get_left_image_pair1_kps_idx(quad,
+                                                                                                              idx):
                 track_id = track.track_id
                 track_index = i
                 break
         else:
             frame_id = quad.stereo_pair1.idx
             track_id = next(track_id_gen)
+            frames[frame_id].track_ids.append(track_id)
             new_track = Track(track_id, get_idx_in_kp_left_image_pair2(quad, idx), quad.stereo_pair1.idx)
             latest_tracks.append(new_track)
             pair1_left_img_kp_idx = get_left_image_pair1_kps_idx(quad, idx)
@@ -552,51 +553,56 @@ def create_track(latest_tracks, inliers_idx, quad: Quad, track_id_gen):
             x_l = kp_l.pt[0]
             x_r = quad.stereo_pair1.right_image.kps[pair1_right_img_kp_idx].pt[0]
             y = kp_l.pt[1]
-
-            left_track_fields = track_id, frame_id, x_l, x_r, y, new_track.last_kp_idx
+            latest_tracks[-1].track_instances.append(TrackInstance(x_l, x_r, y))
+            latest_tracks[-1].frame_ids.append(frame_id)
 
         right_frame_id = quad.stereo_pair2.idx
-        right_track_id = track_id
+        frames[right_frame_id].track_ids.append(track_id)
         kp_l = quad.stereo_pair2.left_image.kps[get_idx_in_kp_left_image_pair2(quad, idx)]
         right_x_l = kp_l.pt[0]
-        right_x_r = quad.stereo_pair2.right_image.kps[get_right_image_pair_kps_idx(quad.stereo_pair2, get_idx_in_kp_left_image_pair2(quad, idx))].pt[0]
+        right_x_r = quad.stereo_pair2.right_image.kps[
+            get_right_image_pair_kps_idx(quad.stereo_pair2, get_idx_in_kp_left_image_pair2(quad, idx))].pt[0]
         right_y = kp_l.pt[1]
 
         latest_tracks[track_index].set_last_pair_id(right_frame_id)
         latest_tracks[track_index].set_last_kp_idx(get_idx_in_kp_left_image_pair2(quad, idx))
-
-        right_track_fields = right_track_id, right_frame_id, right_x_l, right_x_r, right_y, latest_tracks[track_index].last_kp_idx
-
-
-
-        yield left_track_fields, right_track_fields
-
-
+        latest_tracks[track_index].track_instances.append(TrackInstance(right_x_l, right_x_r, right_y))
+        latest_tracks[track_index].frame_ids.append(right_frame_id)
 
 
 def create_database():
-    data_frame = pd.DataFrame(columns=["TrackID", "FrameID", "x_l", "x_r", "y", "last_kp"])
-    latest_tracks = []
-    gen = gen_track_id()
-    row_index = 0
+    tracks = []
+    frames = [Frame(0)]
+    gen = gen_track_id(0)
     for quad in trajectory():
-        for left_track_fields, right_track_fields in create_track(latest_tracks, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen):
-            if left_track_fields:
-                data_frame.loc[row_index] = left_track_fields
-                row_index += 1
-                print(*left_track_fields)
+        frames.append(Frame(quad.stereo_pair2.idx))
+        create_track(tracks, frames, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen)
+    return DataBase(tracks, frames)
 
-            data_frame.loc[row_index] = right_track_fields
-            row_index += 1
-            print(*right_track_fields)
-    data_frame.to_csv("data.csv")
+
+def save_database(database):
+    with open("database.db", "wb") as file:
+        pickle.dump(database, file)
 
 
 def open_database():
-    df = pd.read_csv("data.csv")
-    grouped = df.groupby("TrackID")
-    new_group = grouped.filter(lambda x: len(x) > 9)
+    with open("database.db", "rb") as file:
+        database = pickle.load(file)
+    return database
 
+
+def get_all_track_ids(frame_id, database):
+    return database.frames[frame_id].track_ids
+
+
+def get_all_frame_ids(track_id, database):
+    return database.tracks[track_id].frame_ids
+
+
+def get_feature_locations(frame_id, track_id, database: DataBase) -> TrackInstance:
+    for frame, track_instance in zip(database.tracks[track_id].frame_ids, database.tracks[track_id].track_instances):
+        if frame == frame_id:
+            return track_instance
 
 
 # EX4 end
@@ -605,4 +611,29 @@ def open_database():
 if __name__ == '__main__':
     # a = cv2.KeyPoint(1,2, 5)
     # create_database()
-    open_database()
+
+    #
+    # database = create_database()
+    # save_database(database)
+    database = open_database()
+    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+    frames_idx = get_all_frame_ids(tracks_bigger_than_10[30].track_id, database)
+
+    for frame in frames_idx:
+        track_instance = get_feature_locations(frame, tracks_bigger_than_10[30].track_id, database)
+        img1, img2 = read_images(frame, RGB)
+        kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
+        cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255),
+                          flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+        kp2 = cv2.KeyPoint(track_instance.x_r, track_instance.y, 5)
+        cv2.drawKeypoints(img2, [kp2], img2, (0, 0, 255),
+                          flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+        res = np.empty((100, 200, 3), dtype=np.uint8)
+        res[:, :100] = img1[int(track_instance.y) - 50:int(track_instance.y) + 50,
+                       int(track_instance.x_l) - 50:int(track_instance.x_l) + 50]
+        res[:, 100:] = img2[int(track_instance.y) - 50:int(track_instance.y) + 50,
+                       int(track_instance.x_r) - 50:int(track_instance.x_r) + 50]
+        cv2.imshow(f"Output Image {frame}", res)
+
+    cv2.waitKey(0)
+    a = 1
