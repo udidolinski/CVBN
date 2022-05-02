@@ -514,6 +514,16 @@ def trajectory():
 
 # EX4 start
 
+def create_quads(start_frame_id, end_frame_id):
+    k = read_cameras()[0]
+    curr_stereo_pair2 = None
+    for i in range(start_frame_id, end_frame_id):
+        print(i)
+        current_quad = ransac(i, i + 1, k, curr_stereo_pair2)
+        yield current_quad
+        curr_stereo_pair2 = current_quad.stereo_pair2
+
+
 def gen_track_id(index):
     while True:
         yield index
@@ -532,15 +542,22 @@ def get_right_image_pair_kps_idx(pair, pair1_left_img_kp_idx):
     return pair.get_left_right_kps_idx_dict()[pair1_left_img_kp_idx]
 
 
-def create_track(latest_tracks, frames, inliers_idx, quad: Quad, track_id_gen):
+def create_track(latest_tracks: List[Track], frames, inliers_idx, quad: Quad, track_id_gen):
+    frame_tracks = set(frames[-2].track_ids)
+    # new_kps = {get_left_image_pair1_kps_idx(quad,idx) for idx in inliers_idx}
+    # kp_to_track_dict = {latest_tracks[track_id].last_kp_idx:track_id for track_id in frames[-2].track_ids}
+    # kp_to_track_dict = {kp_idx:kp_to_track_dict[kp_idx] for kp_idx in new_kps if kp_idx in kp_to_track_dict}
     for idx in inliers_idx:
         track_index = -1
-        for i, track in enumerate(latest_tracks):
-            if track.last_pair == quad.stereo_pair1.idx and track.last_kp_idx == get_left_image_pair1_kps_idx(quad,
-                                                                                                              idx):
-                track_id = track.track_id
-                track_index = i
+        for track_idx in frame_tracks:
+            if latest_tracks[track_idx].last_kp_idx == get_left_image_pair1_kps_idx(quad,idx):
+                track_id = track_idx
+                track_index = track_idx
+                frame_tracks.discard(track_idx)
                 break
+        # if idx in kp_to_track_dict:
+        #     track_id = kp_to_track_dict[idx]
+        #     track_index = kp_to_track_dict[idx]
         else:
             frame_id = quad.stereo_pair1.idx
             track_id = next(track_id_gen)
@@ -570,23 +587,38 @@ def create_track(latest_tracks, frames, inliers_idx, quad: Quad, track_id_gen):
         latest_tracks[track_index].frame_ids.append(right_frame_id)
 
 
-def create_database():
-    tracks = []
-    frames = [Frame(0)]
-    gen = gen_track_id(0)
-    for quad in trajectory():
+def create_database(start_frame_id, end_frame_id, start_track_id_gen, tracks=None, frames=None):
+    if not tracks:
+        tracks = []
+    if not frames:
+        frames = [Frame(start_frame_id)]
+    gen = gen_track_id(start_track_id_gen)
+    for i, quad in enumerate(create_quads(start_frame_id, end_frame_id)):
+        percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+        frames[-1].set_inliers_percentage(round(percentage, 2))
         frames.append(Frame(quad.stereo_pair2.idx))
         create_track(tracks, frames, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen)
+    percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+    frames[-1].set_inliers_percentage(round(percentage, 2))
     return DataBase(tracks, frames)
 
 
+def extend_database(database, end_frame_id):
+    start_frame_id = len(database.frames) - 1
+    start_track_id_gen = len(database.tracks)
+    new_database = create_database(start_frame_id, end_frame_id, start_track_id_gen, database.tracks, database.frames)
+    return new_database
+
+
+
+
 def save_database(database):
-    with open("database.db", "wb") as file:
+    with open("database2.db", "wb") as file:
         pickle.dump(database, file)
 
 
-def open_database():
-    with open("database.db", "rb") as file:
+def open_database() -> DataBase:
+    with open("database2.db", "rb") as file:
         database = pickle.load(file)
     return database
 
@@ -613,14 +645,18 @@ if __name__ == '__main__':
     # create_database()
 
     #
-    # database = create_database()
+    database = create_database(0, 30, 0)
     # save_database(database)
     database = open_database()
-    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
-    frames_idx = get_all_frame_ids(tracks_bigger_than_10[30].track_id, database)
+    # new_database = extend_database(database, 60)
+    # save_database(new_database)
+    t=1
 
+    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+    frames_idx = get_all_frame_ids(tracks_bigger_than_10[-1].track_id, database)
+    #
     for frame in frames_idx:
-        track_instance = get_feature_locations(frame, tracks_bigger_than_10[30].track_id, database)
+        track_instance = get_feature_locations(frame, tracks_bigger_than_10[-1].track_id, database)
         img1, img2 = read_images(frame, RGB)
         kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
         cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255),

@@ -3,6 +3,7 @@ from enum import IntEnum
 from collections import namedtuple
 from typing import List
 
+
 class FilterMethod(IntEnum):
     RECTIFICATION = 0
     QUAD = 1
@@ -115,7 +116,6 @@ class StereoPair:
 
 
 class Quad:
-
     def __init__(self, stereo_pair1: StereoPair, stereo_pair2: StereoPair, left_left_matches=None):
         self.stereo_pair1 = stereo_pair1
         self.stereo_pair2 = stereo_pair2
@@ -141,8 +141,8 @@ class Quad:
 
 TrackInstance = namedtuple("TrackInstance", ["x_l", "x_r", "y"])
 
-class Track:
 
+class Track:
     def __init__(self, track_id, kp_idx, pair_id):
         self.track_id = track_id
         self.last_kp_idx = kp_idx
@@ -159,10 +159,19 @@ class Track:
     def __gt__(self, other):
         return len(self.frame_ids) > other
 
+
 class Frame:
     def __init__(self, frame_id):
         self.frame_id = frame_id
         self.track_ids = []
+        self.inliers_percentage = 0
+
+    def get_inliers_percentage(self):
+        return self.inliers_percentage
+
+    def set_inliers_percentage(self, inliers_percentage):
+        self.inliers_percentage = inliers_percentage
+
 
 class DataBase:
     def __init__(self, tracks: List[Track], frames: List[Frame]):
