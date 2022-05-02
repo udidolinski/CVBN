@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from image_utils import *
 import pickle
 from typing import List
+import time
 
 GRAY = 0
 RGB = 1
@@ -543,21 +544,14 @@ def get_right_image_pair_kps_idx(pair, pair1_left_img_kp_idx):
 
 
 def create_track(latest_tracks: List[Track], frames, inliers_idx, quad: Quad, track_id_gen):
-    frame_tracks = set(frames[-2].track_ids)
-    # new_kps = {get_left_image_pair1_kps_idx(quad,idx) for idx in inliers_idx}
-    # kp_to_track_dict = {latest_tracks[track_id].last_kp_idx:track_id for track_id in frames[-2].track_ids}
-    # kp_to_track_dict = {kp_idx:kp_to_track_dict[kp_idx] for kp_idx in new_kps if kp_idx in kp_to_track_dict}
+    new_kps = {get_left_image_pair1_kps_idx(quad,idx) for idx in inliers_idx}
+    kp_to_track_dict = {latest_tracks[track_id].last_kp_idx:track_id for track_id in frames[-2].track_ids}
+    kp_to_track_dict = {kp_idx:kp_to_track_dict[kp_idx] for kp_idx in new_kps if kp_idx in kp_to_track_dict}
     for idx in inliers_idx:
         track_index = -1
-        for track_idx in frame_tracks:
-            if latest_tracks[track_idx].last_kp_idx == get_left_image_pair1_kps_idx(quad,idx):
-                track_id = track_idx
-                track_index = track_idx
-                frame_tracks.discard(track_idx)
-                break
-        # if idx in kp_to_track_dict:
-        #     track_id = kp_to_track_dict[idx]
-        #     track_index = kp_to_track_dict[idx]
+        if get_left_image_pair1_kps_idx(quad,idx) in kp_to_track_dict:
+            track_id = kp_to_track_dict[get_left_image_pair1_kps_idx(quad,idx)]
+            track_index = kp_to_track_dict[get_left_image_pair1_kps_idx(quad,idx)]
         else:
             frame_id = quad.stereo_pair1.idx
             track_id = next(track_id_gen)
@@ -644,14 +638,14 @@ if __name__ == '__main__':
     # a = cv2.KeyPoint(1,2, 5)
     # create_database()
 
-    #
-    database = create_database(0, 30, 0)
+    start = time.time()
+    # database = create_database(0, 3449, 0)
     # save_database(database)
+    end = time.time()
+    print(end-start)
     database = open_database()
     # new_database = extend_database(database, 60)
     # save_database(new_database)
-    t=1
-
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
     frames_idx = get_all_frame_ids(tracks_bigger_than_10[-1].track_id, database)
     #
