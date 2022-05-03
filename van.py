@@ -5,6 +5,7 @@ from image_utils import *
 import pickle
 from typing import List
 import time
+import random
 
 GRAY = 0
 RGB = 1
@@ -630,6 +631,33 @@ def get_feature_locations(frame_id, track_id, database: DataBase) -> TrackInstan
         if frame == frame_id:
             return track_instance
 
+def result_image_size(image_shape, x, y):
+    x1 = max(0, x-50) if image_shape[1] - x >= 50 else image_shape[1] - 100
+    x2 = x1 + 100
+    y1 = max(0, y-50) if image_shape[0] - y >= 50 else image_shape[0] - 100
+    y2 = y1 + 100
+    return x1, x2, y1, y2
+
+def display_track(database):
+    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+    random_track = random.choice(tracks_bigger_than_10)
+    frames_idx = get_all_frame_ids(random_track.track_id, database)
+    #
+    for frame in frames_idx:
+        track_instance = get_feature_locations(frame, random_track.track_id, database)
+        img1, img2 = read_images(frame, RGB)
+        kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
+        cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+        kp2 = cv2.KeyPoint(track_instance.x_r, track_instance.y, 5)
+        cv2.drawKeypoints(img2, [kp2], img2, (0, 0, 255), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+        res = np.empty((100, 200, 3), dtype=np.uint8)
+        x1_l, x2_l, y1_l, y2_l = result_image_size(img1.shape, int(track_instance.x_l), int(track_instance.y))
+        x1_r, x2_r, y1_r, y2_r = result_image_size(img2.shape, int(track_instance.x_r), int(track_instance.y))
+        res[:, :100] = img1[y1_l:y2_l, x1_l:x2_l]
+        res[:, 100:] = img2[y1_r:y2_r, x1_r:x2_r]
+        cv2.imshow(f"Output Image {frame}", res)
+
+    cv2.waitKey(0)
 
 # EX4 end
 
@@ -642,35 +670,41 @@ if __name__ == '__main__':
     # database = create_database(0, 3449, 0)
     # save_database(database)
     end = time.time()
-    print(end-start)
+    # print(end-start)
     database = open_database()
+    display_track(database)
     # new_database = extend_database(database, 60)
     # save_database(new_database)
-    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
-    frames_idx = get_all_frame_ids(tracks_bigger_than_10[-1].track_id, database)
+    # tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+    # frames_idx = get_all_frame_ids(tracks_bigger_than_10[-1].track_id, database)
     #
-    for frame in frames_idx:
-        track_instance = get_feature_locations(frame, tracks_bigger_than_10[-1].track_id, database)
-        img1, img2 = read_images(frame, RGB)
-        kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
-        cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255),
-                          flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
-        kp2 = cv2.KeyPoint(track_instance.x_r, track_instance.y, 5)
-        cv2.drawKeypoints(img2, [kp2], img2, (0, 0, 255),
-                          flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
-        res = np.empty((100, 200, 3), dtype=np.uint8)
-        res[:, :100] = img1[int(track_instance.y) - 50:int(track_instance.y) + 50,
-                       int(track_instance.x_l) - 50:int(track_instance.x_l) + 50]
-        res[:, 100:] = img2[int(track_instance.y) - 50:int(track_instance.y) + 50,
-                       int(track_instance.x_r) - 50:int(track_instance.x_r) + 50]
+    # for frame in frames_idx:
+    #     track_instance = get_feature_locations(frame, tracks_bigger_than_10[-1].track_id, database)
+    #     img1, img2 = read_images(frame, RGB)
+    #     kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
+    #     cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255),
+    #                       flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+    #     kp2 = cv2.KeyPoint(track_instance.x_r, track_instance.y, 5)
+    #     cv2.drawKeypoints(img2, [kp2], img2, (0, 0, 255),
+    #                       flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
+    #     res = np.empty((100, 200, 3), dtype=np.uint8)
+    #     res[:, :100] = img1[int(track_instance.y) - 50:int(track_instance.y) + 50,
+    #                    int(track_instance.x_l) - 50:int(track_instance.x_l) + 50]
+    #     res[:, 100:] = img2[int(track_instance.y) - 50:int(track_instance.y) + 50,
+    #                    int(track_instance.x_r) - 50:int(track_instance.x_r) + 50]
         # cv2.imshow(f"Output Image {frame}", res)
 
     # cv2.waitKey(0)
     a = 1
 
-    print("num_of_tracks: ", database.get_num_of_tracks())
-    print("num_of_frames: ", database.get_num_of_frames())
-    print("mean track length: ", database.get_mean_track_length())
-    print("min track length: ", database.get_min_track_length())
-    print("max track length: ", database.get_max_track_length())
-    database.create_connectivity_graph()
+    # print("num_of_tracks: ", database.get_num_of_tracks())
+    # print("num_of_frames: ", database.get_num_of_frames())
+    # print("mean track length: ", database.get_mean_track_length())
+    # print("min track length: ", database.get_min_track_length())
+    # print("max track length: ", database.get_max_track_length())
+    # print("mean number of frame links: ", database.get_mean_number_of_frame_links())
+    # database.create_connectivity_graph()
+    # database.inliers_percentage_graph()
+    # database.create_track_length_histogram_graph()
+
+    # print(result_image_size((200, 500), 100, 100))

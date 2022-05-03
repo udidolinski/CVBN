@@ -197,13 +197,38 @@ class DataBase:
     def get_min_track_length(self):
         return len(min(self.tracks, key=lambda x: len(x.frame_ids)).frame_ids)
 
+    def get_mean_number_of_frame_links(self):
+        return len(self.tracks)/len(self.frames)
+
     def create_connectivity_graph(self):
         res = []
         for i in range(len(self.frames)-1):
             res.append(len((set(self.frames[i].track_ids)&set(self.frames[i+1].track_ids))))
 
-        plt.plot([i for i in range(len(self.frames)-1)], res)
+        plt.figure(figsize=(12, 5))
+        plt.plot(res)
         plt.xlabel('frame')
         plt.ylabel('outgoing tracks')
         plt.title('connectivity graph')
+        plt.show()
+
+    def inliers_percentage_graph(self):
+        percentage = [frame.inliers_percentage for frame in self.frames]
+        plt.figure(figsize=(12, 5))
+        plt.plot(percentage)
+        plt.ylim(0, 1)
+        plt.xlabel('frame')
+        plt.ylabel('inliers percentage')
+        plt.title('percentage graph')
+        plt.show()
+
+    def create_track_length_histogram_graph(self):
+        track_length = [len(track.frame_ids) for track in self.tracks]
+        bins = np.arange(max(track_length)+1)
+        hist = np.histogram(track_length, bins)[0]
+        plt.figure(figsize=(12, 5))
+        plt.plot(hist)
+        plt.xlabel('track length')
+        plt.ylabel('track #')
+        plt.title('track length histogram')
         plt.show()
