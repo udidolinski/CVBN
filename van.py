@@ -690,7 +690,7 @@ def reprojection(database: DataBase):
     cv_p3d = cv_p4d[:3] / cv_p4d[3]
     cv_p3d2 = transform_rt_to_location2(next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1]+1)), cv_p3d)
     p4d = np.hstack((cv_p3d2, 1))[:,None]
-    for i, extrinsic_matrix in enumerate(read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1])):
+    for i, extrinsic_matrix in enumerate(read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1]+1)):
         left_projected_pixel_2d = perform_transformation_3d_points_to_pixels(extrinsic_matrix, k, p4d).squeeze()
         location = random_track.track_instances[i]
         left_error.append(reprojection_error(left_projected_pixel_2d, np.array([location.x_l, location.y])))
