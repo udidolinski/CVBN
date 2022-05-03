@@ -317,6 +317,12 @@ def transform_rt_to_location(R_t):
     t = R_t[:, 3]
     return R.T @ (-t)
 
+def transform_rt_to_location2(R_t, point_3d):
+    R = R_t[:, :3]
+    t = R_t[:, 3]
+    return R.T @ (point_3d-t)
+
+
 
 def compute_camera_locations(img_idx1, img_idx2):
     k, m1, m2 = read_cameras()
@@ -467,8 +473,7 @@ def compute_2_3d_clouds(transformation, quad):
     return points_3d_pair2, points_3d_pair2_projected
 
 
-def compute_extrinsic_matrix(transformation_0_to_i,
-                             transformation_i_to_i_plus_1):
+def compute_extrinsic_matrix(transformation_0_to_i,transformation_i_to_i_plus_1):
     R1 = transformation_0_to_i[:, :3]
     t1 = transformation_0_to_i[:, 3]
     R2 = transformation_i_to_i_plus_1[:, :3]
@@ -479,11 +484,11 @@ def compute_extrinsic_matrix(transformation_0_to_i,
     return np.hstack((new_R, new_t[:, None]))
 
 
-def read_poses():
-    locations = np.zeros((3450, 3))
+def read_poses(first_index=0, last_index=3450):
+    locations = np.zeros((last_index - first_index, 3))
     i = 0
     with open(POSES_PATH + '00.txt') as f:
-        for l in f.readlines():
+        for l in f.readlines()[first_index:last_index]:
             # if i >= 500:  # for debug
             #     break
             l = l.split()
@@ -659,6 +664,48 @@ def display_track(database):
 
     cv2.waitKey(0)
 
+
+def read_camera_matrices(first_index=0, last_index=3450):
+    with open(POSES_PATH + '00.txt') as f:
+        for l in f.readlines()[first_index:last_index]:
+            l = l.split()
+            extrinsic_matrix = np.array([float(i) for i in l])
+            extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
+            yield extrinsic_matrix
+
+def reprojection_error(a, b):
+    return np.linalg.norm(a-b)
+
+
+def reprojection(database: DataBase):
+    left_error = []
+    right_error = []
+    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+    random_track = random.choice(tracks_bigger_than_10)
+    k, m1, m2 = read_cameras()
+    P = k @ m1
+    Q = k @ m2
+    track_location = random_track.track_instances[-1]
+    cv_p4d = cv2.triangulatePoints(P, Q, (track_location.x_l, track_location.y), (track_location.x_r, track_location.y)).squeeze()
+    cv_p3d = cv_p4d[:3] / cv_p4d[3]
+    cv_p3d2 = transform_rt_to_location2(next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1]+1)), cv_p3d)
+    p4d = np.hstack((cv_p3d2, 1))[:,None]
+    for i, extrinsic_matrix in enumerate(read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1])):
+        left_projected_pixel_2d = perform_transformation_3d_points_to_pixels(extrinsic_matrix, k, p4d).squeeze()
+        location = random_track.track_instances[i]
+        left_error.append(reprojection_error(left_projected_pixel_2d, np.array([location.x_l, location.y])))
+
+
+        right_extrinsic_matrix = compute_extrinsic_matrix(extrinsic_matrix, m2)
+        right_projected_pixel_2d = perform_transformation_3d_points_to_pixels(right_extrinsic_matrix, k, p4d).squeeze()
+        right_error.append(reprojection_error(right_projected_pixel_2d, np.array([location.x_r, location.y])))
+
+
+    plt.plot(left_error, label="left error")
+    plt.plot(right_error, label="right_error")
+    plt.legend()
+    plt.show()
+
 # EX4 end
 
 
@@ -672,7 +719,8 @@ if __name__ == '__main__':
     end = time.time()
     # print(end-start)
     database = open_database()
-    display_track(database)
+    # display_track(database)
+    reprojection(database)
     # new_database = extend_database(database, 60)
     # save_database(new_database)
     # tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
