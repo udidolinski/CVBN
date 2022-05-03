@@ -663,7 +663,14 @@ if __name__ == '__main__':
                        int(track_instance.x_l) - 50:int(track_instance.x_l) + 50]
         res[:, 100:] = img2[int(track_instance.y) - 50:int(track_instance.y) + 50,
                        int(track_instance.x_r) - 50:int(track_instance.x_r) + 50]
-        cv2.imshow(f"Output Image {frame}", res)
+        # cv2.imshow(f"Output Image {frame}", res)
 
-    cv2.waitKey(0)
+    # cv2.waitKey(0)
     a = 1
+
+    print("num_of_tracks: ", database.get_num_of_tracks())
+    print("num_of_frames: ", database.get_num_of_frames())
+    print("mean track length: ", database.get_mean_track_length())
+    print("min track length: ", database.get_min_track_length())
+    print("max track length: ", database.get_max_track_length())
+    database.create_connectivity_graph()

@@ -2,6 +2,7 @@ import numpy as np
 from enum import IntEnum
 from collections import namedtuple
 from typing import List
+import matplotlib.pyplot as plt
 
 
 class FilterMethod(IntEnum):
@@ -177,3 +178,32 @@ class DataBase:
     def __init__(self, tracks: List[Track], frames: List[Frame]):
         self.tracks = tracks
         self.frames = frames
+
+    def get_num_of_tracks(self):
+        return len(self.tracks)
+
+    def get_num_of_frames(self):
+        return len(self.frames)
+
+    def get_mean_track_length(self):
+        sum = 0
+        for track in self.tracks:
+            sum += len(track.frame_ids)
+        return sum/len(self.tracks)
+
+    def get_max_track_length(self):
+        return len(max(self.tracks, key=lambda x: len(x.frame_ids)).frame_ids)
+
+    def get_min_track_length(self):
+        return len(min(self.tracks, key=lambda x: len(x.frame_ids)).frame_ids)
+
+    def create_connectivity_graph(self):
+        res = []
+        for i in range(len(self.frames)-1):
+            res.append(len((set(self.frames[i].track_ids)&set(self.frames[i+1].track_ids))))
+
+        plt.plot([i for i in range(len(self.frames)-1)], res)
+        plt.xlabel('frame')
+        plt.ylabel('outgoing tracks')
+        plt.title('connectivity graph')
+        plt.show()
