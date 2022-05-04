@@ -550,6 +550,14 @@ def get_right_image_pair_kps_idx(pair, pair1_left_img_kp_idx):
 
 
 def create_track(latest_tracks: List[Track], frames, inliers_idx, quad: Quad, track_id_gen):
+    """
+    This function create new track or continuing a track.
+    :param latest_tracks: all tracks that created.
+    :param frames: all frames that created.
+    :param inliers_idx: the inliers of the left frame in pair1 of quad.
+    :param quad:
+    :param track_id_gen:
+    """
     new_kps = {get_left_image_pair1_kps_idx(quad,idx) for idx in inliers_idx}
     kp_to_track_dict = {latest_tracks[track_id].last_kp_idx:track_id for track_id in frames[-2].track_ids}
     kp_to_track_dict = {kp_idx:kp_to_track_dict[kp_idx] for kp_idx in new_kps if kp_idx in kp_to_track_dict}
@@ -588,6 +596,15 @@ def create_track(latest_tracks: List[Track], frames, inliers_idx, quad: Quad, tr
 
 
 def create_database(start_frame_id, end_frame_id, start_track_id_gen, tracks=None, frames=None):
+    """
+    This function creates a database of tracks.
+    :param start_frame_id: first frame to store the tracks from.
+    :param end_frame_id: last frame to store the tracks.
+    :param start_track_id_gen: track id to start from.
+    :param tracks:
+    :param frames:
+    :return: The database
+    """
     if not tracks:
         tracks = []
     if not frames:
@@ -604,39 +621,62 @@ def create_database(start_frame_id, end_frame_id, start_track_id_gen, tracks=Non
 
 
 def extend_database(database, end_frame_id):
+    """
+    This function extend the database from the last entry to end_frame_id.
+    """
     start_frame_id = len(database.frames) - 1
     start_track_id_gen = len(database.tracks)
     new_database = create_database(start_frame_id, end_frame_id, start_track_id_gen, database.tracks, database.frames)
     return new_database
 
 
-
-
 def save_database(database):
+    """
+    This function save the database to a file.
+    """
     with open("database2.db", "wb") as file:
         pickle.dump(database, file)
 
 
 def open_database() -> DataBase:
+    """
+    This function open the database file and return thr database object.
+    """
     with open("database2.db", "rb") as file:
         database = pickle.load(file)
     return database
 
 
 def get_all_track_ids(frame_id, database):
+    """
+    This function return all the track_id that appear on a given frame_id.
+    """
     return database.frames[frame_id].track_ids
 
 
 def get_all_frame_ids(track_id, database):
+    """
+    This function return all the frame_id that are part of a given track_id.
+    """
     return database.tracks[track_id].frame_ids
 
 
 def get_feature_locations(frame_id, track_id, database: DataBase) -> TrackInstance:
+    """
+    This function return Feature locations of track TrackId on both left and right images as a triplet (x_l, x_r, y).
+    """
     for frame, track_instance in zip(database.tracks[track_id].frame_ids, database.tracks[track_id].track_instances):
         if frame == frame_id:
             return track_instance
 
 def result_image_size(image_shape, x, y):
+    """
+    This function find the image size to present track
+    :param image_shape:
+    :param x: x track location
+    :param y: y track location
+    :return: The image size to display
+    """
     x1 = max(0, x-50) if image_shape[1] - x >= 50 else image_shape[1] - 100
     x2 = x1 + 100
     y1 = max(0, y-50) if image_shape[0] - y >= 50 else image_shape[0] - 100
@@ -644,10 +684,13 @@ def result_image_size(image_shape, x, y):
     return x1, x2, y1, y2
 
 def display_track(database):
+    """
+    This function display a random track of length > 9.
+    :param database:
+    """
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
     random_track = random.choice(tracks_bigger_than_10)
     frames_idx = get_all_frame_ids(random_track.track_id, database)
-    #
     for frame in frames_idx:
         track_instance = get_feature_locations(frame, random_track.track_id, database)
         img1, img2 = read_images(frame, RGB)
@@ -661,7 +704,7 @@ def display_track(database):
         res[:, :100] = img1[y1_l:y2_l, x1_l:x2_l]
         res[:, 100:] = img2[y1_r:y2_r, x1_r:x2_r]
         cv2.imshow(f"Output Image {frame}", res)
-
+        # cv2.imwrite(f"Output Image {frame}.png", res)
     cv2.waitKey(0)
 
 
@@ -673,11 +716,29 @@ def read_camera_matrices(first_index=0, last_index=3450):
             extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
             yield extrinsic_matrix
 
-def reprojection_error(a, b):
+
+def calculate_norm(a, b):
     return np.linalg.norm(a-b)
 
 
+def reprojection_error(extrinsic_matrix, k, p4d, location):
+    """
+    :param extrinsic_matrix:
+    :param k:
+    :param p4d:
+    :param location: [x,y]
+    :return: reprojection error
+    """
+    projected_pixel_2d = perform_transformation_3d_points_to_pixels(extrinsic_matrix, k, p4d).squeeze()
+    return calculate_norm(projected_pixel_2d, np.array(location))
+
+
 def reprojection(database: DataBase):
+    """
+    This function calculate and plot the reprojection error (the distance between the projection and the tracked feature
+     location on that camera)
+    :param database: Tracks database
+    """
     left_error = []
     right_error = []
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
@@ -691,68 +752,42 @@ def reprojection(database: DataBase):
     cv_p3d2 = transform_rt_to_location2(next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1]+1)), cv_p3d)
     p4d = np.hstack((cv_p3d2, 1))[:,None]
     for i, extrinsic_matrix in enumerate(read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1]+1)):
-        left_projected_pixel_2d = perform_transformation_3d_points_to_pixels(extrinsic_matrix, k, p4d).squeeze()
         location = random_track.track_instances[i]
-        left_error.append(reprojection_error(left_projected_pixel_2d, np.array([location.x_l, location.y])))
-
+        left_error.append(reprojection_error(extrinsic_matrix, k, p4d, [location.x_l, location.y]))
 
         right_extrinsic_matrix = compute_extrinsic_matrix(extrinsic_matrix, m2)
-        right_projected_pixel_2d = perform_transformation_3d_points_to_pixels(right_extrinsic_matrix, k, p4d).squeeze()
-        right_error.append(reprojection_error(right_projected_pixel_2d, np.array([location.x_r, location.y])))
-
+        right_error.append(reprojection_error(right_extrinsic_matrix, k, p4d, [location.x_r, location.y]))
 
     plt.plot(left_error, label="left error")
     plt.plot(right_error, label="right_error")
     plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('error')
+    plt.title('reprojection error')
     plt.show()
+    plt.show()
+
+
+def prsent_statistics(database: DataBase):
+    print("num_of_tracks: ", database.get_num_of_tracks())
+    print("num_of_frames: ", database.get_num_of_frames())
+    print("mean track length: ", database.get_mean_track_length())
+    print("min track length: ", database.get_min_track_length())
+    print("max track length: ", database.get_max_track_length())
+    print("mean number of frame links: ", database.get_mean_number_of_frame_links())
+    display_track(database)
+    database.create_connectivity_graph()
+    database.inliers_percentage_graph()
+    database.create_track_length_histogram_graph()
+    reprojection(database)
 
 # EX4 end
 
 
 if __name__ == '__main__':
-    # a = cv2.KeyPoint(1,2, 5)
-    # create_database()
-
-    start = time.time()
     # database = create_database(0, 3449, 0)
     # save_database(database)
-    end = time.time()
-    # print(end-start)
     database = open_database()
-    # display_track(database)
-    reprojection(database)
+    prsent_statistics(database)
     # new_database = extend_database(database, 60)
     # save_database(new_database)
-    # tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
-    # frames_idx = get_all_frame_ids(tracks_bigger_than_10[-1].track_id, database)
-    #
-    # for frame in frames_idx:
-    #     track_instance = get_feature_locations(frame, tracks_bigger_than_10[-1].track_id, database)
-    #     img1, img2 = read_images(frame, RGB)
-    #     kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
-    #     cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255),
-    #                       flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
-    #     kp2 = cv2.KeyPoint(track_instance.x_r, track_instance.y, 5)
-    #     cv2.drawKeypoints(img2, [kp2], img2, (0, 0, 255),
-    #                       flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
-    #     res = np.empty((100, 200, 3), dtype=np.uint8)
-    #     res[:, :100] = img1[int(track_instance.y) - 50:int(track_instance.y) + 50,
-    #                    int(track_instance.x_l) - 50:int(track_instance.x_l) + 50]
-    #     res[:, 100:] = img2[int(track_instance.y) - 50:int(track_instance.y) + 50,
-    #                    int(track_instance.x_r) - 50:int(track_instance.x_r) + 50]
-        # cv2.imshow(f"Output Image {frame}", res)
-
-    # cv2.waitKey(0)
-    a = 1
-
-    # print("num_of_tracks: ", database.get_num_of_tracks())
-    # print("num_of_frames: ", database.get_num_of_frames())
-    # print("mean track length: ", database.get_mean_track_length())
-    # print("min track length: ", database.get_min_track_length())
-    # print("max track length: ", database.get_max_track_length())
-    # print("mean number of frame links: ", database.get_mean_number_of_frame_links())
-    # database.create_connectivity_graph()
-    # database.inliers_percentage_graph()
-    # database.create_track_length_histogram_graph()
-
-    # print(result_image_size((200, 500), 100, 100))

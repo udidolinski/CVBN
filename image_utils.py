@@ -144,7 +144,16 @@ TrackInstance = namedtuple("TrackInstance", ["x_l", "x_r", "y"])
 
 
 class Track:
+    """
+    This class represent track.
+    """
     def __init__(self, track_id, kp_idx, pair_id):
+        """
+        Constructur.
+        :param track_id:
+        :param kp_idx: the last keypoint index the track is.
+        :param pair_id: the last pair id track this track appears in.
+        """
         self.track_id = track_id
         self.last_kp_idx = kp_idx
         self.last_pair = pair_id
@@ -162,6 +171,9 @@ class Track:
 
 
 class Frame:
+    """
+    This class represent frame.
+    """
     def __init__(self, frame_id):
         self.frame_id = frame_id
         self.track_ids = []
@@ -175,36 +187,59 @@ class Frame:
 
 
 class DataBase:
+    """
+    This class hold the tracks and frames objects.
+    """
     def __init__(self, tracks: List[Track], frames: List[Frame]):
         self.tracks = tracks
         self.frames = frames
 
     def get_num_of_tracks(self):
+        """
+        This function return the number of tracks in the database.
+        """
         return len(self.tracks)
 
     def get_num_of_frames(self):
+        """
+        This function return the number of frames in the database.
+        """
         return len(self.frames)
 
     def get_mean_track_length(self):
+        """
+        This function return the mean track length of the tracks in the database.
+        """
         sum = 0
         for track in self.tracks:
             sum += len(track.frame_ids)
         return sum/len(self.tracks)
 
     def get_max_track_length(self):
+        """
+        This function return the maximum length of track in the database.
+        """
         return len(max(self.tracks, key=lambda x: len(x.frame_ids)).frame_ids)
 
     def get_min_track_length(self):
+        """
+        This function return the minimum length of track in the database.
+        """
         return len(min(self.tracks, key=lambda x: len(x.frame_ids)).frame_ids)
 
     def get_mean_number_of_frame_links(self):
+        """
+        This function return the mean number of frame links of track in the database.
+        """
         return len(self.tracks)/len(self.frames)
 
     def create_connectivity_graph(self):
+        """
+        This function creates and plot the tracks connectivity graph.
+        """
         res = []
         for i in range(len(self.frames)-1):
             res.append(len((set(self.frames[i].track_ids)&set(self.frames[i+1].track_ids))))
-
         plt.figure(figsize=(12, 5))
         plt.plot(res)
         plt.xlabel('frame')
@@ -213,6 +248,9 @@ class DataBase:
         plt.show()
 
     def inliers_percentage_graph(self):
+        """
+        This function creates and plot the inliers percentage graph.
+        """
         percentage = [frame.inliers_percentage for frame in self.frames]
         plt.figure(figsize=(12, 5))
         plt.plot(percentage)
@@ -223,6 +261,9 @@ class DataBase:
         plt.show()
 
     def create_track_length_histogram_graph(self):
+        """
+        This function creates and plot the track length histogram graph.
+        """
         track_length = [len(track.frame_ids) for track in self.tracks]
         bins = np.arange(max(track_length)+1)
         hist = np.histogram(track_length, bins)[0]
