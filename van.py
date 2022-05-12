@@ -3,19 +3,20 @@ from image_utils import *
 import pickle
 import random
 from typing import Tuple, Iterator
+import os
 
 DEVIATION_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
 
-DATA_PATH = r'VAN_ex\dataset\sequences\00\\'
-POSES_PATH = r'VAN_ex\dataset\poses\\'
+DATA_PATH = os.path.join("VAN_ex","dataset","sequences", "00")
+POSES_PATH = os.path.join("VAN_ex","dataset","poses")
 
 
 def read_images(idx: int, color: ImageColor) -> Tuple[NDArray[np.uint8], NDArray[np.uint8]]:
     img_name = '{:06d}.png'.format(idx)
-    img1 = cv2.imread(DATA_PATH + 'image_0\\' + img_name, color)
-    img2 = cv2.imread(DATA_PATH + 'image_1\\' + img_name, color)
+    img1 = cv2.imread(os.path.join(DATA_PATH,'image_0', img_name), color)
+    img2 = cv2.imread(os.path.join(DATA_PATH,'image_1', img_name), color)
     return img1, img2
 
 
@@ -124,7 +125,7 @@ def draw_good_and_bad_matches(stereo_pair: StereoPair, output_name1: str, output
 
 
 def read_cameras() -> Tuple[FloatNDArray, FloatNDArray, FloatNDArray]:
-    with open(DATA_PATH + 'calib.txt') as f:
+    with open(os.path.join(DATA_PATH,'calib.txt')) as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
     l1 = [float(i) for i in l1]
@@ -434,7 +435,7 @@ def compute_extrinsic_matrix(transformation_0_to_i: FloatNDArray, transformation
 def read_poses(first_index: int = 0, last_index: int = 3450) -> FloatNDArray:
     locations = np.zeros((last_index - first_index, 3))
     i = 0
-    with open(POSES_PATH + '00.txt') as f:
+    with open(os.path.join(POSES_PATH, '00.txt')) as f:
         for l in f.readlines()[first_index:last_index]:
             # if i >= 500:  # for debug
             #     break
@@ -657,7 +658,7 @@ def display_track(database: DataBase) -> None:
 
 
 def read_camera_matrices(first_index: int = 0, last_index: int = 3450) -> Iterator[FloatNDArray]:
-    with open(POSES_PATH + '00.txt') as f:
+    with open(os.path.join(POSES_PATH, '00.txt')) as f:
         for l in f.readlines()[first_index:last_index]:
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
