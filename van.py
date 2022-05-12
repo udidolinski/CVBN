@@ -17,6 +17,8 @@ POSES_PATH = os.path.join("VAN_ex","dataset","poses")
 
 
 
+
+
 def read_images(idx: int, color: ImageColor) -> Tuple[NDArray[np.uint8], NDArray[np.uint8]]:
     img_name = '{:06d}.png'.format(idx)
     img1 = cv2.imread(os.path.join(DATA_PATH,'image_0', img_name), color)
