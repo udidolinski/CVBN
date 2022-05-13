@@ -182,12 +182,19 @@ class Frame:
         self.frame_id = frame_id
         self.track_ids = []
         self.inliers_percentage = 0
+        self.transformation_from_zero = np.zeros(1)
 
     def get_inliers_percentage(self) -> float:
         return self.inliers_percentage
 
     def set_inliers_percentage(self, inliers_percentage: float) -> None:
         self.inliers_percentage = inliers_percentage
+
+    def set_transformation_from_zero(self, transformation_from_zero: FloatNDArray) -> None:
+        self.transformation_from_zero = transformation_from_zero
+
+    def get_transformation_from_zero(self) -> FloatNDArray:
+        return self.transformation_from_zero
 
 
 class DataBase:

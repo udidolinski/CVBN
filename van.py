@@ -558,15 +558,21 @@ def create_database(start_frame_id: int, end_frame_id: int, start_track_id: int,
     :param frames:
     :return: The database
     """
+
     if not tracks:
         tracks = []
     if not frames:
         frames = [Frame(start_frame_id)]
+        frames[-1].set_transformation_from_zero(np.hstack((np.eye(3), np.zeros((3, 1)))))
     gen = gen_track_id(start_track_id)
     for i, quad in enumerate(create_quads(start_frame_id, end_frame_id)):
+        current_transformation = frames[-1].get_transformation_from_zero()
         percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
         frames[-1].set_inliers_percentage(round(percentage, 2))
+        transformation_i_to_i_plus_1 = quad.get_relative_trans()
+        transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
         frames.append(Frame(quad.stereo_pair2.idx))
+        frames[-1].set_transformation_from_zero(transformation_0_to_i_plus_1)
         create_track(tracks, frames, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen)
     percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
     frames[-1].set_inliers_percentage(round(percentage, 2))
@@ -587,7 +593,7 @@ def save_database(database: DataBase) -> None:
     """
     This function save the database to a file.
     """
-    with open("database2.db", "wb") as file:
+    with open("database.db", "wb") as file:
         pickle.dump(database, file)
 
 
@@ -595,7 +601,7 @@ def open_database() -> DataBase:
     """
     This function open the database file and return thr database object.
     """
-    with open("database2.db", "rb") as file:
+    with open("database.db", "rb") as file:
         database = pickle.load(file)
     return database
 
@@ -740,9 +746,10 @@ def present_statistics(database: DataBase) -> None:
 
 
 if __name__ == '__main__':
-    database = create_database(0, 3449, 0)
+    # database = create_database(0, 3449, 0)
     # compute_camera_locations(0, 1)
     # save_database(database)
-    # database = open_database()
+    database = open_database()
+    t=1
     # new_database = extend_database(database, 60)
     # save_database(new_database)
