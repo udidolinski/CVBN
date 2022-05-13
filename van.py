@@ -4,6 +4,7 @@ import pickle
 import random
 from typing import Tuple, Iterator
 import os
+import gtsam
 
 DEVIATION_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
@@ -745,11 +746,18 @@ def present_statistics(database: DataBase) -> None:
 # EX4 end
 
 
+# EX 5 start
+
+def reprojection_error2(database: DataBase):
+    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+    random_track = random.choice(tracks_bigger_than_10)
+    c =  gtsam.gtsam.StereoCamera()
 if __name__ == '__main__':
     # database = create_database(0, 3449, 0)
     # compute_camera_locations(0, 1)
     # save_database(database)
     database = open_database()
+    reprojection_error2(database)
     t=1
     # new_database = extend_database(database, 60)
     # save_database(new_database)
