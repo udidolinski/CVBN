@@ -4,7 +4,7 @@ import pickle
 import random
 from typing import Tuple, Iterator
 import os
-import gtsam
+from gtsam import gtsam
 
 DEVIATION_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
@@ -645,13 +645,14 @@ def result_image_size(image_shape: Tuple[int, int, int], x: int, y: int) -> Tupl
     return x1, x2, y1, y2
 
 
-def display_track(database: DataBase) -> None:
+def display_track(database: DataBase, random_track: Track = None) -> None:
     """
     This function display a random track of length > 9.
     :param database:
     """
-    tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
-    random_track = random.choice(tracks_bigger_than_10)
+    if not random_track:
+        tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
+        random_track = random.choice(tracks_bigger_than_10)
     frames_idx = get_all_frame_ids(random_track.track_id, database)
     for frame in frames_idx:
         track_instance = get_feature_locations(frame, random_track.track_id, database)
@@ -720,6 +721,10 @@ def reprojection(database: DataBase) -> None:
         right_extrinsic_matrix = compute_extrinsic_matrix(extrinsic_matrix, m2)
         right_error.append(reprojection_error(right_extrinsic_matrix, k, p4d, [location.x_r, location.y]))
 
+    plot_projection_error(left_error, right_error)
+
+
+def plot_projection_error(left_error, right_error):
     plt.plot(left_error, label="left error")
     plt.plot(right_error, label="right error")
     plt.legend()
@@ -742,20 +747,59 @@ def present_statistics(database: DataBase) -> None:
     database.create_track_length_histogram_graph()
     reprojection(database)
 
-
+r_t: FloatNDArray
 # EX4 end
 
 
 # EX 5 start
+def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]:
+    R = R_t[:, :3]
+    t = R_t[:, 3]
+    new_R = R.T
+    new_t = - new_R @ t
+    return new_R, new_t[:, None]
+
+
+def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo) -> gtsam.StereoCamera:
+    curr_frame = database.frames[frame_idx]
+    new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
+    frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+    return gtsam.StereoCamera(frame_pose, stereo_k)
+
 
 def reprojection_error2(database: DataBase):
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
     random_track = random.choice(tracks_bigger_than_10)
-    c =  gtsam.gtsam.StereoCamera()
+    k, m1, m2 = read_cameras()
+    f_x, f_y, skew, c_x, c_y, baseline = k[0][0], k[1][1], k[0][1], k[0][2], k[1][2], m2[0][3]
+    stereo_k = gtsam.Cal3_S2Stereo(f_x, f_y, skew, c_x, c_y, -baseline)
+
+    last_frame_stereo_camera = create_stereo_camera(database, random_track.frame_ids[-1], stereo_k)
+    point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*random_track.track_instances[-1]))
+    # display_track(database, random_track)
+    left_error, right_error = [], []
+    for i, frame_idx in enumerate(random_track.frame_ids):
+        curr_frame = database.frames[frame_idx]
+        new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
+        frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+        curr_camera = gtsam.StereoCamera(frame_pose, stereo_k)
+        projected_p = curr_camera.project(point_3d)
+        left_pt = np.array([projected_p.uL(),  projected_p.v()])
+        right_pt = np.array([projected_p.uR(),  projected_p.v()])
+        location = random_track.track_instances[i]
+        left_location = np.array([location.x_l, location.y])
+        right_location = np.array([location.x_r, location.y])
+        left_error.append(calculate_norm(left_pt, left_location))
+        right_error.append(calculate_norm(right_pt, right_location))
+
+    plot_projection_error(left_error, right_error)
+    a = 1
+
 if __name__ == '__main__':
     # database = create_database(0, 3449, 0)
     # compute_camera_locations(0, 1)
     # save_database(database)
+    random.seed(0)
     database = open_database()
     reprojection_error2(database)
     t=1
