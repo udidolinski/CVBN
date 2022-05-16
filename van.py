@@ -721,18 +721,25 @@ def reprojection(database: DataBase) -> None:
         right_extrinsic_matrix = compute_extrinsic_matrix(extrinsic_matrix, m2)
         right_error.append(reprojection_error(right_extrinsic_matrix, k, p4d, [location.x_r, location.y]))
 
-    plot_projection_error(left_error, right_error)
+    plot_projection_error('reprojection error', left_error, right_error)
 
 
-def plot_projection_error(left_error, right_error):
+def plot_projection_error(title: str, left_error: List[float], right_error: List[float]=None) -> None:
     plt.plot(left_error, label="left error")
-    plt.plot(right_error, label="right error")
+    if right_error:
+        plt.plot(right_error, label="right error")
     plt.legend()
     plt.xlabel('frame')
     plt.ylabel('error')
-    plt.title('reprojection error')
+    plt.title(title)
     plt.show()
 
+def plot_reprojection_compared_to_factor_error(x_reprojection: List[float], y_factor: List[float]) -> None:
+    plt.plot(x_reprojection, y_factor)
+    plt.xlabel('reprojection error')
+    plt.ylabel('factor error')
+    plt.title("factor error as a function of reprojection error")
+    plt.show()
 
 def present_statistics(database: DataBase) -> None:
     print("num_of_tracks: ", database.get_num_of_tracks())
@@ -760,11 +767,11 @@ def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]
     return new_R, new_t[:, None]
 
 
-def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo) -> gtsam.StereoCamera:
+def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo) -> Tuple[gtsam.StereoCamera, gtsam.Pose3]:
     curr_frame = database.frames[frame_idx]
     new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
     frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
-    return gtsam.StereoCamera(frame_pose, stereo_k)
+    return gtsam.StereoCamera(frame_pose, stereo_k), frame_pose
 
 
 def reprojection_error2(database: DataBase):
@@ -774,15 +781,24 @@ def reprojection_error2(database: DataBase):
     f_x, f_y, skew, c_x, c_y, baseline = k[0][0], k[1][1], k[0][1], k[0][2], k[1][2], m2[0][3]
     stereo_k = gtsam.Cal3_S2Stereo(f_x, f_y, skew, c_x, c_y, -baseline)
 
-    last_frame_stereo_camera = create_stereo_camera(database, random_track.frame_ids[-1], stereo_k)
+    last_frame_stereo_camera, last_frame_pose = create_stereo_camera(database, random_track.frame_ids[-1], stereo_k)
     point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*random_track.track_instances[-1]))
     # display_track(database, random_track)
     left_error, right_error = [], []
+    graph = gtsam.NonlinearFactorGraph()
+    x_last = gtsam.symbol('x', len(random_track.frame_ids))
+    graph.add(gtsam.NonlinearEqualityPose3(x_last, last_frame_pose))
+    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([2.0, 2.0, 2.0]))
+    l1 = gtsam.symbol('l', 1)  # point
+    initialEstimate = gtsam.Values()
+    initialEstimate.insert(x_last, last_frame_pose)
+    factors = []
     for i, frame_idx in enumerate(random_track.frame_ids):
-        curr_frame = database.frames[frame_idx]
-        new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
-        frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
-        curr_camera = gtsam.StereoCamera(frame_pose, stereo_k)
+        print(i)
+        if i == len(random_track.frame_ids)-1:
+            break
+        frame_symbol = gtsam.symbol('x', i+1)   # camera i
+        curr_camera, frame_pose = create_stereo_camera(database, frame_idx, stereo_k)
         projected_p = curr_camera.project(point_3d)
         left_pt = np.array([projected_p.uL(),  projected_p.v()])
         right_pt = np.array([projected_p.uR(),  projected_p.v()])
@@ -791,9 +807,38 @@ def reprojection_error2(database: DataBase):
         right_location = np.array([location.x_r, location.y])
         left_error.append(calculate_norm(left_pt, left_location))
         right_error.append(calculate_norm(right_pt, right_location))
+        factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, l1, stereo_k)
+        graph.add(factor)
+        factors.append(factor)
+        initialEstimate.insert(frame_symbol, frame_pose)
+    print(stereo_model.sigmas())
+    expected_l1 = point_3d
+    initialEstimate.insert(l1, expected_l1)
 
-    plot_projection_error(left_error, right_error)
-    a = 1
+    factor_errors = []
+    for factor in factors:
+        factor_errors.append(factor.error(initialEstimate))
+
+    print(factor_errors)
+
+    # optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
+    # result = optimizer.optimize()
+    # print(result)
+    # graph.printErrors(result)
+    # print(graph[0])
+
+    plot_projection_error('reprojection error', left_error, right_error)
+    plot_projection_error('factor error', factor_errors)
+    plot_reprojection_compared_to_factor_error(left_error, factor_errors)
+
+
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     # database = create_database(0, 3449, 0)
