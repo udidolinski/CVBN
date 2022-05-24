@@ -13,20 +13,14 @@ DEVIATION_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
 
-DATA_PATH = os.path.join("VAN_ex","dataset","sequences", "00")
-POSES_PATH = os.path.join("VAN_ex","dataset","poses")
-
-
-
-
-
-
+DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
+POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
 
 
 def read_images(idx: int, color: ImageColor) -> Tuple[NDArray[np.uint8], NDArray[np.uint8]]:
     img_name = '{:06d}.png'.format(idx)
-    img1 = cv2.imread(os.path.join(DATA_PATH,'image_0', img_name), color)
-    img2 = cv2.imread(os.path.join(DATA_PATH,'image_1', img_name), color)
+    img1 = cv2.imread(os.path.join(DATA_PATH, 'image_0', img_name), color)
+    img2 = cv2.imread(os.path.join(DATA_PATH, 'image_1', img_name), color)
     return img1, img2
 
 
@@ -59,8 +53,10 @@ def match_key_points(img1: Image, img2: Image) -> NDArray[DMatch]:
 
 def show_matches(img1: Image, img2: Image, matches: NDArray[DMatch]) -> None:
     random_matches = matches[np.random.randint(len(matches), size=20)]
-    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3), dtype=np.uint8)
-    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
+    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3),
+                   dtype=np.uint8)
+    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res,
+                    flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
     cv2.imshow("Output matches", res)  # 1.3
     cv2.waitKey(0)
 
@@ -73,13 +69,15 @@ def print_feature_descriptors(descriptors1: NDArray[np.uint8], descriptors2: NDA
 
 
 def significance_test(img1: Image, img2: Image) -> None:
-    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3), dtype=np.uint8)
+    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3),
+                   dtype=np.uint8)
     brute_force = cv2.BFMatcher(cv2.NORM_L1)
     matches = brute_force.knnMatch(img1.desc, img2.desc, k=2)
     ratio = 0.5
     good_matches = np.array([m1 for m1, m2 in matches if m1.distance < ratio * m2.distance])
     random_matches = good_matches[np.random.randint(len(good_matches), size=20)]
-    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
+    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res,
+                    flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
     cv2.imshow("Output random good matches", res)  # 1.4
     cv2.waitKey(0)
 
@@ -135,7 +133,7 @@ def draw_good_and_bad_matches(stereo_pair: StereoPair, output_name1: str, output
 
 
 def read_cameras() -> Tuple[FloatNDArray, FloatNDArray, FloatNDArray]:
-    with open(os.path.join(DATA_PATH,'calib.txt')) as f:
+    with open(os.path.join(DATA_PATH, 'calib.txt')) as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
     l1 = [float(i) for i in l1]
@@ -148,7 +146,8 @@ def read_cameras() -> Tuple[FloatNDArray, FloatNDArray, FloatNDArray]:
     return k, m1, m2
 
 
-def is_our_triangulate_equal_cv(P: FloatNDArray, Q: FloatNDArray, p1: KeyPoint, p2: KeyPoint, cv_p3d: FloatNDArray) -> bool:
+def is_our_triangulate_equal_cv(P: FloatNDArray, Q: FloatNDArray, p1: KeyPoint, p2: KeyPoint,
+                                cv_p3d: FloatNDArray) -> bool:
     our_p3d, lamda = triangulate_point(P, Q, p1, p2)
     return np.all(np.isclose(our_p3d, cv_p3d))
 
@@ -212,6 +211,7 @@ def plot_locations(x: FloatNDArray, z: FloatNDArray) -> None:
     plt.title("trajecory of left cameras")
     plt.show()
 
+
 def match_stereo_image(img_idx: int) -> StereoPair:
     img1, img2 = detect_key_points(img_idx)
     matches = match_key_points(img1, img2)
@@ -236,10 +236,12 @@ def rodriguez_to_mat(rvec: FloatNDArray, tvec: FloatNDArray) -> FloatNDArray:
     return np.hstack((rot, tvec))
 
 
-def pnp_helper(quad: Quad, k: FloatNDArray, p3p: bool = True, indices: Union[NDArray[np.int32], None] = None) -> Tuple[bool, FloatNDArray, FloatNDArray]:
+def pnp_helper(quad: Quad, k: FloatNDArray, p3p: bool = True, indices: Union[NDArray[np.int32], None] = None) -> Tuple[
+    bool, FloatNDArray, FloatNDArray]:
     flag = cv2.SOLVEPNP_EPNP
     if p3p:
-        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4, replace=False)
+        indices = np.random.choice(np.arange(len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))), 4,
+                                   replace=False)
         flag = cv2.SOLVEPNP_AP3P
     good_kps = quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)[indices]
     image_points = np.array([kps.pt for kps in good_kps])
@@ -248,7 +250,8 @@ def pnp_helper(quad: Quad, k: FloatNDArray, p3p: bool = True, indices: Union[NDA
     return succeed, rvec, tvec
 
 
-def pnp(quad: Quad, k: FloatNDArray, p3p: bool = True, inliers_idx: Union[NDArray[np.int32], None] = None) -> Tuple[FloatNDArray, FloatNDArray]:
+def pnp(quad: Quad, k: FloatNDArray, p3p: bool = True, inliers_idx: Union[NDArray[np.int32], None] = None) -> Tuple[
+    FloatNDArray, FloatNDArray]:
     succeed, rvec, tvec = pnp_helper(quad, k, p3p, inliers_idx)
     while not succeed:
         print("didn't succeed")
@@ -296,7 +299,6 @@ def create_quad(img_idx1: int, img_idx2: int, curr_stereo_pair2: StereoPair) -> 
     return quad
 
 
-
 def transform_rt_to_location(R_t: FloatNDArray, point_3d: Union[FloatNDArray, None] = None) -> FloatNDArray:
     R = R_t[:, :3]
     t = R_t[:, 3]
@@ -323,7 +325,8 @@ def compute_camera_locations(img_idx1, img_idx2):
     plot_triangulations(points[0], points[1], points[2])
 
 
-def find_inliers(quad: Quad, k: FloatNDArray, current_transformation: FloatNDArray) -> Tuple[int, int, NDArray[np.int64]]:
+def find_inliers(quad: Quad, k: FloatNDArray, current_transformation: FloatNDArray) -> Tuple[
+    int, int, NDArray[np.int64]]:
     points_3d = triangulate_all_points(quad.stereo_pair1.get_quad_inliers_matches(), quad.stereo_pair1)
     points_4d = np.vstack((points_3d, np.ones(points_3d.shape[1])))
     model_pixels_2d = perform_transformation_3d_points_to_pixels(current_transformation, k, points_4d)
@@ -333,7 +336,8 @@ def find_inliers(quad: Quad, k: FloatNDArray, current_transformation: FloatNDArr
     return len(inliers_idx), diff_real_and_model.shape[1] - len(inliers_idx), inliers_idx
 
 
-def perform_transformation_3d_points_to_pixels(R_t_1_2: FloatNDArray, k: FloatNDArray, points_4d: FloatNDArray) -> FloatNDArray:
+def perform_transformation_3d_points_to_pixels(R_t_1_2: FloatNDArray, k: FloatNDArray,
+                                               points_4d: FloatNDArray) -> FloatNDArray:
     pixels_3d = k @ R_t_1_2 @ points_4d
     pixels_3d[0] /= pixels_3d[2]
     pixels_3d[1] /= pixels_3d[2]
@@ -402,8 +406,10 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
         i += 1
     # Repeat 2
     for j in range(5):
-        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s, num_iter,
-                                                                           quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
+        max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s,
+                                                                           num_iter,
+                                                                           quad.stereo_pair2.left_image.get_inliers_kps_idx(
+                                                                               FilterMethod.PNP))
         if is_transformation_close:
             break
     # if img_idx1 == 0:
@@ -417,7 +423,8 @@ def plot_3d_clouds(points_3d_pair2: FloatNDArray, points_3d_pair2_projected2: Fl
     plt.suptitle("3D point clouds of pair 2 and pair 2 projected from pair 1")
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(points_3d_pair2[0], points_3d_pair2[1], points_3d_pair2[2], c="red", alpha=0.4)
-    ax.scatter(points_3d_pair2_projected2[0], points_3d_pair2_projected2[1], points_3d_pair2_projected2[2], c="blue", alpha=0.4)
+    ax.scatter(points_3d_pair2_projected2[0], points_3d_pair2_projected2[1], points_3d_pair2_projected2[2], c="blue",
+               alpha=0.4)
     ax.legend(["pair 2 3D point cloud", "pair 2 projected from pair 1"], loc='upper left')
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -433,14 +440,17 @@ def compute_2_3d_clouds(transformation: FloatNDArray, quad: Quad) -> Tuple[Float
     points_4d = np.vstack((points_3d_pair1, np.ones(points_3d_pair1.shape[1])))
     points_3d_pair2_projected = transformation @ points_4d
     points_3d_pair2_projected2 = (points_3d_pair2_projected.T[
-        (np.abs(points_3d_pair2_projected[0]) < 20) & (np.abs(points_3d_pair2_projected[2]) < 100) & (np.abs(points_3d_pair2_projected[1]) < 8)]).T
-    points_3d_pair2 = (points_3d_pair2.T[(np.abs(points_3d_pair2[0]) < 20) & (np.abs(points_3d_pair2[2]) < 100) & (np.abs(points_3d_pair2[1]) < 8)]).T
+        (np.abs(points_3d_pair2_projected[0]) < 20) & (np.abs(points_3d_pair2_projected[2]) < 100) & (
+                    np.abs(points_3d_pair2_projected[1]) < 8)]).T
+    points_3d_pair2 = (points_3d_pair2.T[
+        (np.abs(points_3d_pair2[0]) < 20) & (np.abs(points_3d_pair2[2]) < 100) & (np.abs(points_3d_pair2[1]) < 8)]).T
     # plot_3d_clouds(points_3d_pair2, points_3d_pair2_projected2)
 
     return points_3d_pair2, points_3d_pair2_projected
 
 
-def compute_extrinsic_matrix(transformation_0_to_i: FloatNDArray, transformation_i_to_i_plus_1: FloatNDArray) -> FloatNDArray:
+def compute_extrinsic_matrix(transformation_0_to_i: FloatNDArray,
+                             transformation_i_to_i_plus_1: FloatNDArray) -> FloatNDArray:
     R1 = transformation_0_to_i[:, :3]
     t1 = transformation_0_to_i[:, 3]
     R2 = transformation_i_to_i_plus_1[:, :3]
@@ -515,7 +525,8 @@ def get_right_image_pair_kps_idx(pair: StereoPair, pair1_left_img_kp_idx: int) -
     return pair.get_left_right_kps_idx_dict()[pair1_left_img_kp_idx]
 
 
-def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: NDArray[np.int64], quad: Quad, track_id_gen: Iterator[int]) -> None:
+def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: NDArray[np.int64], quad: Quad,
+                 track_id_gen: Iterator[int]) -> None:
     """
     This function create new track or continuing a track.
     :param latest_tracks: all tracks that created.
@@ -551,7 +562,8 @@ def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: N
         frames[right_frame_id].track_ids.append(track_id)
         kp_l = quad.stereo_pair2.left_image.kps[get_idx_in_kp_left_image_pair2(quad, idx)]
         right_x_l = kp_l.pt[0]
-        right_x_r = quad.stereo_pair2.right_image.kps[get_right_image_pair_kps_idx(quad.stereo_pair2, get_idx_in_kp_left_image_pair2(quad, idx))].pt[0]
+        right_x_r = quad.stereo_pair2.right_image.kps[
+            get_right_image_pair_kps_idx(quad.stereo_pair2, get_idx_in_kp_left_image_pair2(quad, idx))].pt[0]
         right_y = kp_l.pt[1]
 
         latest_tracks[track_index].set_last_pair_id(right_frame_id)
@@ -580,14 +592,16 @@ def create_database(start_frame_id: int, end_frame_id: int, start_track_id: int,
     gen = gen_track_id(start_track_id)
     for i, quad in enumerate(create_quads(start_frame_id, end_frame_id)):
         current_transformation = frames[-1].get_transformation_from_zero()
-        percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+        percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(
+            quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
         frames[-1].set_inliers_percentage(round(percentage, 2))
         transformation_i_to_i_plus_1 = quad.get_relative_trans()
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
         frames.append(Frame(quad.stereo_pair2.idx))
         frames[-1].set_transformation_from_zero(transformation_0_to_i_plus_1)
         create_track(tracks, frames, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen)
-    percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+    percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(
+        quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
     frames[-1].set_inliers_percentage(round(percentage, 2))
     return DataBase(tracks, frames)
 
@@ -696,7 +710,8 @@ def calculate_norm(a: FloatNDArray, b: FloatNDArray) -> Union[float, FloatNDArra
     return np.linalg.norm(a - b)
 
 
-def reprojection_error(extrinsic_matrix: FloatNDArray, k: FloatNDArray, p4d: FloatNDArray, location: List[float]) -> Union[float, FloatNDArray]:
+def reprojection_error(extrinsic_matrix: FloatNDArray, k: FloatNDArray, p4d: FloatNDArray, location: List[float]) -> \
+Union[float, FloatNDArray]:
     """
     :param extrinsic_matrix:
     :param k:
@@ -722,11 +737,14 @@ def reprojection(database: DataBase) -> None:
     P = k @ m1
     Q = k @ m2
     track_location = random_track.track_instances[-1]
-    cv_p4d = cv2.triangulatePoints(P, Q, (track_location.x_l, track_location.y), (track_location.x_r, track_location.y)).squeeze()
+    cv_p4d = cv2.triangulatePoints(P, Q, (track_location.x_l, track_location.y),
+                                   (track_location.x_r, track_location.y)).squeeze()
     cv_p3d = cv_p4d[:3] / cv_p4d[3]
-    cv_p3d2 = transform_rt_to_location(next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1] + 1)), cv_p3d)
+    cv_p3d2 = transform_rt_to_location(
+        next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1] + 1)), cv_p3d)
     p4d = np.hstack((cv_p3d2, 1))[:, None]
-    for i, extrinsic_matrix in enumerate(read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1] + 1)):
+    for i, extrinsic_matrix in enumerate(
+            read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1] + 1)):
         location = random_track.track_instances[i]
         left_error.append(reprojection_error(extrinsic_matrix, k, p4d, [location.x_l, location.y]))
 
@@ -736,7 +754,7 @@ def reprojection(database: DataBase) -> None:
     plot_projection_error('reprojection error', left_error, right_error)
 
 
-def plot_projection_error(title: str, left_error: List[float], right_error: List[float]=None) -> None:
+def plot_projection_error(title: str, left_error: List[float], right_error: List[float] = None) -> None:
     plt.plot(left_error, label="left error")
     if right_error:
         plt.plot(right_error, label="right error")
@@ -746,12 +764,14 @@ def plot_projection_error(title: str, left_error: List[float], right_error: List
     plt.title(title)
     plt.show()
 
+
 def plot_reprojection_compared_to_factor_error(x_reprojection: List[float], y_factor: List[float]) -> None:
     plt.plot(x_reprojection, y_factor)
     plt.xlabel('reprojection error')
     plt.ylabel('factor error')
     plt.title("factor error as a function of reprojection error")
     plt.show()
+
 
 def present_statistics(database: DataBase) -> None:
     print("num_of_tracks: ", database.get_num_of_tracks())
@@ -766,7 +786,10 @@ def present_statistics(database: DataBase) -> None:
     database.create_track_length_histogram_graph()
     reprojection(database)
 
+
 r_t: FloatNDArray
+
+
 # EX4 end
 
 
@@ -779,9 +802,6 @@ def get_stereo_k() -> gtsam.Cal3_S2Stereo:
     return stereo_k
 
 
-
-
-
 def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]:
     R = R_t[:, :3]
     t = R_t[:, 3]
@@ -790,7 +810,8 @@ def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]
     return new_R, new_t[:, None]
 
 
-def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans) -> Tuple[gtsam.StereoCamera, gtsam.Pose3]:
+def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans) -> Tuple[
+    gtsam.StereoCamera, gtsam.Pose3]:
     curr_frame = database.frames[frame_idx]
     new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
 
@@ -825,13 +846,13 @@ def reprojection_error2(database: DataBase):
     factors = []
     for i, frame_idx in enumerate(random_track.frame_ids):
         print(i)
-        if i == len(random_track.frame_ids)-1:
+        if i == len(random_track.frame_ids) - 1:
             break
-        frame_symbol = gtsam.symbol('x', i+1)   # camera i
+        frame_symbol = gtsam.symbol('x', i + 1)  # camera i
         curr_camera, frame_pose = create_stereo_camera(database, frame_idx, stereo_k)
         projected_p = curr_camera.project(point_3d)
-        left_pt = np.array([projected_p.uL(),  projected_p.v()])
-        right_pt = np.array([projected_p.uR(),  projected_p.v()])
+        left_pt = np.array([projected_p.uL(), projected_p.v()])
+        right_pt = np.array([projected_p.uR(), projected_p.v()])
         location = random_track.track_instances[i]
         left_location = np.array([location.x_l, location.y])
         right_location = np.array([location.x_r, location.y])
@@ -862,17 +883,17 @@ def reprojection_error2(database: DataBase):
     plot_reprojection_compared_to_factor_error(left_error, factor_errors)
 
 
-
 def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_frame: int, end_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
     start_frame_trans = database.frames[start_frame].transformation_from_zero
     last_frame_stereo_camera, last_frame_pose = create_stereo_camera(database, end_frame, stereo_k, start_frame_trans)
     # start_frame_stereo_camera, start_frame_pose = create_stereo_camera(database, start_frame, stereo_k)
     end_frame_tracks_set = set(track_id for track_id in database.frames[end_frame].track_ids if database.tracks[track_id].frame_ids[0] != end_frame)
+    start_frame_tracks_set = set(track_id for track_id in database.frames[start_frame].track_ids if database.tracks[track_id].frame_ids[-1] != start_frame)
     graph = gtsam.NonlinearFactorGraph()
     # x_last = gtsam.symbol('x', end_frame)
     x_start = gtsam.symbol('x', start_frame)
     # start_frame_stereo_camera, start_frame_pose = create_stereo_camera(database, end_frame, stereo_k)
-    end_frame_trans = database.frames[end_frame].transformation_from_zero # 0 -> end frame
+    end_frame_trans = database.frames[end_frame].transformation_from_zero  # 0 -> end frame
     # 0 -> start frame
     new_R, new_t = get_camera_to_global(end_frame_trans)
     # new_R, new_t = get_camera_to_global(start_frame_trans)
@@ -884,19 +905,33 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
     track_id_to_point = {}
     initialEstimate = gtsam.Values()
     initialEstimate.insert(x_start, gtsam.Pose3())
-    for track_id in database.frames[end_frame].track_ids:
-        if database.tracks[track_id].frame_ids[0] == end_frame:
-            continue
-        s = gtsam.symbol('l', track_id)  # feature point
-        location = get_feature_locations(end_frame, track_id, database)
-        point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*location))
-        track_id_to_point[track_id] = s
-        initialEstimate.insert(s, point_3d)
-
-    locations = []
+    visited_tracks = set()
+    # create tracks 3D points
+    for i in range(end_frame, start_frame - 1, -1):
+        curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans)[0]
+        tracks = database.frames[i].track_ids
+        if i == end_frame:
+            tracks = end_frame_tracks_set
+        elif i == start_frame:
+            tracks = start_frame_tracks_set
+        for track_id in tracks:
+            if track_id in visited_tracks:
+                continue
+            s = gtsam.symbol('l', track_id)  # feature point
+            visited_tracks.add(track_id)
+            location = get_feature_locations(i, track_id, database)
+            # point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*location))
+            point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
+            track_id_to_point[track_id] = s
+            initialEstimate.insert(s, point_3d)
+    # for debug
+    # locations_before_x = []
+    # locations_before_z = []
+    # locations_after_x = []
+    # locations_after_z = []
     frame_symbols = []
-    for i in range(start_frame, end_frame+1):
-        frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start # camera i
+    for i in range(start_frame, end_frame + 1):
+        frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
         frame_symbols.append(frame_symbol)
         # last_to_i_trans = compute_extrinsic_matrix(end_frame_trans_inverse, database.frames[i].transformation_from_zero)
         new_R, new_t = get_camera_to_global(database.frames[i].transformation_from_zero)  # i -> 0
@@ -906,14 +941,20 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
         new_R2, new_t2 = get_camera_to_global(i_to_start_trans)
         lc = transform_rt_to_location(np.hstack((new_R2, new_R2)))
 
-
         new_R = i_to_start_trans[:, :3]
         new_t = i_to_start_trans[:, 3]
         frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
-        curr_frame_tracks_set = set(database.frames[i].track_ids).intersection(end_frame_tracks_set)
-        for track_id in curr_frame_tracks_set:
+
+        tracks = database.frames[i].track_ids
+        if i == end_frame:
+            tracks = end_frame_tracks_set
+        elif i == start_frame:
+            tracks = start_frame_tracks_set
+        # curr_frame_tracks_set = set(database.frames[i].track_ids).intersection(end_frame_tracks_set)
+        for track_id in tracks:
             location = get_feature_locations(i, track_id, database)
-            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id], stereo_k)
+            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol,
+                                                 track_id_to_point[track_id], stereo_k)
             graph.add(factor)
         # graph.add(gtsam.PriorFactorPose3(frame_symbol, frame_pose, gtsam.noiseModel.Isotropic.Sigma(6, 1.0)))
         if i != start_frame:
@@ -924,15 +965,25 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
     result = optimizer.optimize()
     error_after = optimizer.error()
     # frame_symbols.append(x_last)
+
+    # for debug
     # for s in frame_symbols:
     #     pose = result.atPose3(s)
-    #     world_loc = pose.transformFrom(np.zeros(3))
-    #     locations.append(world_loc)
+    #     locations_after_x.append(pose.x())
+    #     locations_after_z.append(pose.z())
+    #     pose = initialEstimate.atPose3(s)
+    #     locations_before_x.append(pose.x())
+    #     locations_before_z.append(pose.z())
+    # plt.scatter(locations_before_x, locations_before_z)
+    # plt.scatter(locations_after_x, locations_after_z)
+    # plt.show()
+
+    # world_loc = pose.transformFrom(np.zeros(3))
 
     last_frame_pose = result.atPose3(frame_symbols[-1])
     R = last_frame_pose.rotation().matrix()
     t = last_frame_pose.translation()
-    R_t = np.hstack((R, t[:,None]))
+    R_t = np.hstack((R, t[:, None]))
 
     print("total error before optimization: ", error_before)
     print("total error after optimization: ", error_after)
@@ -943,7 +994,8 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
     return error_before, error_after, last_frame_pose
 
 
-def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_key_frame: int, end_key_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
+def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_key_frame: int,
+                          end_key_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
     error_before, error_after, last_frame_pose = reprojection_error3(database, stereo_k, start_key_frame, end_key_frame)
     return error_before, error_after, last_frame_pose
 
@@ -959,15 +1011,14 @@ def preform_bundle(database: DataBase):
     while curr_start_frame < 3449:
         end_frame = find_end_keyframe(database, curr_start_frame)
         print(curr_start_frame, end_frame)
-        error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, curr_start_frame, end_frame)
+        error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, curr_start_frame,
+                                                                           end_frame)
         R = last_frame_pose.rotation().matrix()
         t = last_frame_pose.translation()
         R_t = np.hstack((R, t[:, None]))
         current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
-        locations[end_frame] = current_transformation[:,3]
+        locations[end_frame] = current_transformation[:, 3]
         curr_start_frame = end_frame
-
-
 
     # transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
     # locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)
@@ -985,6 +1036,7 @@ def preform_bundle(database: DataBase):
     return locations.T
     # plot_locations(loc[0], loc[2])
 
+
 def find_end_keyframe(database: DataBase, frame_id: int):
     from collections import Counter
     max_frame_counter = Counter()
@@ -995,9 +1047,10 @@ def find_end_keyframe(database: DataBase, frame_id: int):
         max_frame_counter[min(curr_max_frame_id, frame_id + 19)] += 1
 
     threshold = 20
-    max_frame_set = {key for key,value in max_frame_counter.items() if value>=threshold}
+    max_frame_set = {key for key, value in max_frame_counter.items() if value >= threshold}
 
     return max(max_frame_set)
+
 
 if __name__ == '__main__':
     # database = create_database(0, 3449, 0)
@@ -1010,11 +1063,11 @@ if __name__ == '__main__':
 
     # reprojection_error3(database, random_track.frame_ids[0], random_track.frame_ids[-1], stereo_k)
     # error_before, error_after, locations = preform_bundle_window(database, stereo_k, 0, 5)
-    l = read_poses().T
-    l2 = preform_bundle(database)
-    plot_trajectury(l2[0], l2[2], l[0], l[2])
-    # preform_bundle_window(database, stereo_k, 73, 92)
+    # l = read_poses().T
+    # l2 = preform_bundle(database)
+    # plot_trajectury(l2[0], l2[2], l[0], l[2])
+    preform_bundle_window(database, stereo_k, 0, 100)
 
-    t=1
+    t = 1
     # new_database = extend_database(database, 60)
     # save_database(new_database)
