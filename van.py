@@ -1,4 +1,5 @@
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 
 from image_utils import *
@@ -621,7 +622,7 @@ def save_database(database: DataBase) -> None:
     """
     This function save the database to a file.
     """
-    with open("database.db", "wb") as file:
+    with open("VAN_ex/docs/database.db", "wb") as file:
         pickle.dump(database, file)
 
 
@@ -629,7 +630,7 @@ def open_database() -> DataBase:
     """
     This function open the database file and return thr database object.
     """
-    with open("database.db", "rb") as file:
+    with open("VAN_ex/docs/database.db", "rb") as file:
         database = pickle.load(file)
     return database
 
@@ -826,7 +827,6 @@ def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal
 
 
 def reprojection_error2(database: DataBase):
-    # todo update to be like reprojection_error3
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
     random_track = random.choice(tracks_bigger_than_10)
     start_frame_trans = database.frames[random_track.frame_ids[0]].transformation_from_zero
@@ -872,19 +872,12 @@ def reprojection_error2(database: DataBase):
         factor_errors.append(factor.error(initialEstimate))
 
     print(factor_errors)
-
-    # optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
-    # result = optimizer.optimize()
-    # print(result)
-    # graph.printErrors(result)
-    # print(graph[0])
-
     plot_projection_error('reprojection error', left_error, right_error)
     plot_projection_error('factor error', factor_errors)
     plot_reprojection_compared_to_factor_error(left_error, factor_errors)
 
 
-def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_frame: int, end_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
+def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_frame: int, end_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
     start_frame_trans = database.frames[start_frame].transformation_from_zero
     initialEstimate = gtsam.Values()
     graph = gtsam.NonlinearFactorGraph()
@@ -894,12 +887,6 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
     track_id_to_point = {}
     initialEstimate.insert(x_start, gtsam.Pose3())
     visited_tracks = set()
-    # for debug
-    locations_before_x = []
-    locations_before_z = []
-    locations_after_x = []
-    locations_after_z = []
-
     frame_symbols = []
     for i in range(end_frame, start_frame - 1, -1):
         frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
@@ -920,32 +907,13 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
                 point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
                 track_id_to_point[track_id] = s
                 initialEstimate.insert(s, point_3d)
-
-            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol,
-                                                 track_id_to_point[track_id], stereo_k)
+            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id], stereo_k)
             graph.add(factor)
 
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
     result = optimizer.optimize()
     error_after = optimizer.error()
-    # frame_symbols.append(x_last)
-
-    # for debug
-    # for s in frame_symbols:
-    #     pose = result.atPose3(s)
-    #     locations_after_x.append(pose.x())
-    #     locations_after_z.append(pose.z())
-    #     pose = initialEstimate.atPose3(s)
-    #     locations_before_x.append(pose.x())
-    #     locations_before_z.append(pose.z())
-    # plt.scatter(locations_before_x, locations_before_z)
-    # plt.scatter(locations_after_x, locations_after_z)
-    # plt.xlim(-50,50)
-    # plt.show()
-
-    # world_loc = pose.transformFrom(np.zeros(3))
-
     last_frame_pose = result.atPose3(frame_symbols[0])
     print("total error before optimization: ", error_before)
     print("total error after optimization: ", error_after)
@@ -953,12 +921,6 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
     # plot_locations(loc[0], loc[2])
     # plot_trajectory(1, result)
     # plt.show()
-    return error_before, error_after, last_frame_pose
-
-
-def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_key_frame: int,
-                          end_key_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
-    error_before, error_after, last_frame_pose = reprojection_error3(database, stereo_k, start_key_frame, end_key_frame)
     return error_before, error_after, last_frame_pose
 
 
@@ -982,10 +944,6 @@ def preform_bundle(database: DataBase):
     #     locations[end_frame] = current_transformation[:, 3]
     #     curr_start_frame = end_frame
 
-    # transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
-    # locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)
-    # current_transformation = transformation_0_to_i_plus_1
-
     for i in range(0, 3450, jump):
         print(i)
         error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, i, min(i+jump, 3449))
@@ -994,9 +952,7 @@ def preform_bundle(database: DataBase):
         R_t = np.hstack((R, t[:,None]))
         current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
         locations[min(i+jump, 3449)] = current_transformation[:,3]
-
     return locations.T
-    # plot_locations(loc[0], loc[2])
 
 
 def find_end_keyframe(database: DataBase, frame_id: int):
@@ -1022,19 +978,20 @@ if __name__ == '__main__':
     database = open_database()
     # reprojection_error2(database)
     stereo_k = get_stereo_k()
-
-    # reprojection_error3(database, random_track.frame_ids[0], random_track.frame_ids[-1], stereo_k)
-    # error_before, error_after, locations = preform_bundle_window(database, stereo_k, 0, 5)
-    init_loc = np.zeros((3450, 3))
-    for i in range(3450):
-        init_loc[i] = transform_rt_to_location(database.frames[i].transformation_from_zero)
-    l = init_loc.T
-    # l = read_poses().T
+    l = read_poses().T
     l2 = preform_bundle(database)
     plot_trajectury(l2[0], l2[2], l[0], l[2])
-    # reprojection_error2(database)
-    # preform_bundle_window(database, stereo_k, 0, 10)
 
-    t = 1
-    # new_database = extend_database(database, 60)
-    # save_database(new_database)
+    # ploting the distance error in meters
+    jump = 19
+    res = []
+    dist_error = (l-l2)**2
+    error = np.sqrt(dist_error[0]+ dist_error[1]+ dist_error[2])
+    for i in range(0, 3450, jump):
+        res.append(error[min(i+jump, 3449)])
+    x = np.arange(len(res))*jump
+    plt.plot(x, res)
+    plt.title("keyframe localization error in meters")
+    plt.show()
+
+
