@@ -10,6 +10,7 @@ from gtsam import gtsam, utils
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
 DEVIATION_THRESHOLD = 2
+PNP_THRESHOLD = 1
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
 
@@ -332,7 +333,7 @@ def find_inliers(quad: Quad, k: FloatNDArray, current_transformation: FloatNDArr
     model_pixels_2d = perform_transformation_3d_points_to_pixels(current_transformation, k, points_4d)
     real_pixels_2d = np.array([point.pt for point in quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD)]).T
     diff_real_and_model = np.abs(real_pixels_2d - model_pixels_2d)
-    inliers_idx = np.where((diff_real_and_model[0] < 2) & (diff_real_and_model[1] < 2))[0]
+    inliers_idx = np.where((diff_real_and_model[0] < PNP_THRESHOLD) & (diff_real_and_model[1] < PNP_THRESHOLD))[0]
     return len(inliers_idx), diff_real_and_model.shape[1] - len(inliers_idx), inliers_idx
 
 
@@ -828,11 +829,12 @@ def reprojection_error2(database: DataBase):
     # todo update to be like reprojection_error3
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
     random_track = random.choice(tracks_bigger_than_10)
+    start_frame_trans = database.frames[random_track.frame_ids[0]].transformation_from_zero
     k, m1, m2 = read_cameras()
     f_x, f_y, skew, c_x, c_y, baseline = k[0][0], k[1][1], k[0][1], k[0][2], k[1][2], m2[0][3]
     stereo_k = gtsam.Cal3_S2Stereo(f_x, f_y, skew, c_x, c_y, -baseline)
 
-    last_frame_stereo_camera, last_frame_pose = create_stereo_camera(database, random_track.frame_ids[-1], stereo_k)
+    last_frame_stereo_camera, last_frame_pose = create_stereo_camera(database, random_track.frame_ids[-1], stereo_k, start_frame_trans)
     point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*random_track.track_instances[-1]))
 
     left_error, right_error = [], []
@@ -849,7 +851,7 @@ def reprojection_error2(database: DataBase):
         if i == len(random_track.frame_ids) - 1:
             break
         frame_symbol = gtsam.symbol('x', i + 1)  # camera i
-        curr_camera, frame_pose = create_stereo_camera(database, frame_idx, stereo_k)
+        curr_camera, frame_pose = create_stereo_camera(database, frame_idx, stereo_k, start_frame_trans)
         projected_p = curr_camera.project(point_3d)
         left_pt = np.array([projected_p.uL(), projected_p.v()])
         right_pt = np.array([projected_p.uR(), projected_p.v()])
@@ -862,7 +864,6 @@ def reprojection_error2(database: DataBase):
         graph.add(factor)
         factors.append(factor)
         initialEstimate.insert(frame_symbol, frame_pose)
-    print(stereo_model.sigmas())
     expected_l1 = point_3d
     initialEstimate.insert(l1, expected_l1)
 
@@ -885,80 +886,44 @@ def reprojection_error2(database: DataBase):
 
 def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_frame: int, end_frame: int) -> Tuple[float, float, List[FloatNDArray]]:
     start_frame_trans = database.frames[start_frame].transformation_from_zero
-    last_frame_stereo_camera, last_frame_pose = create_stereo_camera(database, end_frame, stereo_k, start_frame_trans)
-    # start_frame_stereo_camera, start_frame_pose = create_stereo_camera(database, start_frame, stereo_k)
-    end_frame_tracks_set = set(track_id for track_id in database.frames[end_frame].track_ids if database.tracks[track_id].frame_ids[0] != end_frame)
-    start_frame_tracks_set = set(track_id for track_id in database.frames[start_frame].track_ids if database.tracks[track_id].frame_ids[-1] != start_frame)
-    graph = gtsam.NonlinearFactorGraph()
-    # x_last = gtsam.symbol('x', end_frame)
-    x_start = gtsam.symbol('x', start_frame)
-    # start_frame_stereo_camera, start_frame_pose = create_stereo_camera(database, end_frame, stereo_k)
-    end_frame_trans = database.frames[end_frame].transformation_from_zero  # 0 -> end frame
-    # 0 -> start frame
-    new_R, new_t = get_camera_to_global(end_frame_trans)
-    # new_R, new_t = get_camera_to_global(start_frame_trans)
-    # end_frame_trans_inverse = np.hstack((new_R, new_t)) # end frame -> 0
-    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1.0, 1.0, 1.0]))
-    # graph.add(gtsam.PriorFactorPose3(x_last, gtsam.Pose3(), gtsam.noiseModel.Isotropic.Sigma(6, 1.0)))
-    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Isotropic.Sigma(6, 1.0)))
-    # graph.add(gtsam.NonlinearEqualityPose3(x_last, last_frame_pose))
-    track_id_to_point = {}
     initialEstimate = gtsam.Values()
+    graph = gtsam.NonlinearFactorGraph()
+    x_start = gtsam.symbol('x', start_frame)
+    stereo_model = gtsam.noiseModel.Isotropic.Sigma(3, 1.5)
+    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.1, 0.1, 0.1]))))
+    track_id_to_point = {}
     initialEstimate.insert(x_start, gtsam.Pose3())
     visited_tracks = set()
-    # create tracks 3D points
-    for i in range(end_frame, start_frame - 1, -1):
-        curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans)[0]
-        tracks = database.frames[i].track_ids
-        if i == end_frame:
-            tracks = end_frame_tracks_set
-        elif i == start_frame:
-            tracks = start_frame_tracks_set
-        for track_id in tracks:
-            if track_id in visited_tracks:
-                continue
-            s = gtsam.symbol('l', track_id)  # feature point
-            visited_tracks.add(track_id)
-            location = get_feature_locations(i, track_id, database)
-            # point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*location))
-            point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
-            track_id_to_point[track_id] = s
-            initialEstimate.insert(s, point_3d)
     # for debug
-    # locations_before_x = []
-    # locations_before_z = []
-    # locations_after_x = []
-    # locations_after_z = []
+    locations_before_x = []
+    locations_before_z = []
+    locations_after_x = []
+    locations_after_z = []
+
     frame_symbols = []
-    for i in range(start_frame, end_frame + 1):
+    for i in range(end_frame, start_frame - 1, -1):
         frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
         frame_symbols.append(frame_symbol)
-        # last_to_i_trans = compute_extrinsic_matrix(end_frame_trans_inverse, database.frames[i].transformation_from_zero)
-        new_R, new_t = get_camera_to_global(database.frames[i].transformation_from_zero)  # i -> 0
-        i_to_zero_trans = np.hstack((new_R, new_t))
-        i_to_start_trans = compute_extrinsic_matrix(i_to_zero_trans, start_frame_trans)
-
-        new_R2, new_t2 = get_camera_to_global(i_to_start_trans)
-        lc = transform_rt_to_location(np.hstack((new_R2, new_R2)))
-
-        new_R = i_to_start_trans[:, :3]
-        new_t = i_to_start_trans[:, 3]
-        frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
-
+        curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans)[0]
+        # all_stereo_cameras.insert(0, curr_camera)
         tracks = database.frames[i].track_ids
-        if i == end_frame:
-            tracks = end_frame_tracks_set
-        elif i == start_frame:
-            tracks = start_frame_tracks_set
-        # curr_frame_tracks_set = set(database.frames[i].track_ids).intersection(end_frame_tracks_set)
+        tracks = [track_id for track_id in tracks if len(database.tracks[track_id].frame_ids)>3]
+        frame_pose = curr_camera.pose()
+        if i != start_frame:
+            initialEstimate.insert(frame_symbol, frame_pose)
+
         for track_id in tracks:
             location = get_feature_locations(i, track_id, database)
+            if track_id not in visited_tracks:
+                s = gtsam.symbol('l', track_id)  # feature point
+                visited_tracks.add(track_id)
+                point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
+                track_id_to_point[track_id] = s
+                initialEstimate.insert(s, point_3d)
+
             factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol,
                                                  track_id_to_point[track_id], stereo_k)
             graph.add(factor)
-        # graph.add(gtsam.PriorFactorPose3(frame_symbol, frame_pose, gtsam.noiseModel.Isotropic.Sigma(6, 1.0)))
-        if i != start_frame:
-            initialEstimate.insert(frame_symbol, frame_pose)
 
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
@@ -976,15 +941,12 @@ def reprojection_error3(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start
     #     locations_before_z.append(pose.z())
     # plt.scatter(locations_before_x, locations_before_z)
     # plt.scatter(locations_after_x, locations_after_z)
+    # plt.xlim(-50,50)
     # plt.show()
 
     # world_loc = pose.transformFrom(np.zeros(3))
 
-    last_frame_pose = result.atPose3(frame_symbols[-1])
-    R = last_frame_pose.rotation().matrix()
-    t = last_frame_pose.translation()
-    R_t = np.hstack((R, t[:, None]))
-
+    last_frame_pose = result.atPose3(frame_symbols[0])
     print("total error before optimization: ", error_before)
     print("total error after optimization: ", error_after)
     # loc = np.array(locations).T
@@ -1006,32 +968,32 @@ def preform_bundle(database: DataBase):
     # i = 0
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     locations = np.zeros((3450, 3))
-    jump = 7
+    jump = 19
     curr_start_frame = 0
-    while curr_start_frame < 3449:
-        end_frame = find_end_keyframe(database, curr_start_frame)
-        print(curr_start_frame, end_frame)
-        error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, curr_start_frame,
-                                                                           end_frame)
-        R = last_frame_pose.rotation().matrix()
-        t = last_frame_pose.translation()
-        R_t = np.hstack((R, t[:, None]))
-        current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
-        locations[end_frame] = current_transformation[:, 3]
-        curr_start_frame = end_frame
+    # while curr_start_frame < 3449:
+    #     end_frame = find_end_keyframe(database, curr_start_frame)
+    #     print(curr_start_frame, end_frame)
+    #     error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, curr_start_frame,
+    #                                                                        end_frame)
+    #     R = last_frame_pose.rotation().matrix()
+    #     t = last_frame_pose.translation()
+    #     R_t = np.hstack((R, t[:, None]))
+    #     current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
+    #     locations[end_frame] = current_transformation[:, 3]
+    #     curr_start_frame = end_frame
 
     # transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
     # locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)
     # current_transformation = transformation_0_to_i_plus_1
 
-    # for i in range(0, 500, jump):
-    #     print(i)
-    #     error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, i, min(i+jump, 500))
-    #     R = last_frame_pose.rotation().matrix()
-    #     t = last_frame_pose.translation()
-    #     R_t = np.hstack((R, t[:,None]))
-    #     current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
-    #     locations[min(i+jump, 500)] = current_transformation[:,3]
+    for i in range(0, 3450, jump):
+        print(i)
+        error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, i, min(i+jump, 3449))
+        R = last_frame_pose.rotation().matrix()
+        t = last_frame_pose.translation()
+        R_t = np.hstack((R, t[:,None]))
+        current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
+        locations[min(i+jump, 3449)] = current_transformation[:,3]
 
     return locations.T
     # plot_locations(loc[0], loc[2])
@@ -1063,10 +1025,15 @@ if __name__ == '__main__':
 
     # reprojection_error3(database, random_track.frame_ids[0], random_track.frame_ids[-1], stereo_k)
     # error_before, error_after, locations = preform_bundle_window(database, stereo_k, 0, 5)
+    init_loc = np.zeros((3450, 3))
+    for i in range(3450):
+        init_loc[i] = transform_rt_to_location(database.frames[i].transformation_from_zero)
+    l = init_loc.T
     # l = read_poses().T
-    # l2 = preform_bundle(database)
-    # plot_trajectury(l2[0], l2[2], l[0], l[2])
-    preform_bundle_window(database, stereo_k, 0, 100)
+    l2 = preform_bundle(database)
+    plot_trajectury(l2[0], l2[2], l[0], l[2])
+    # reprojection_error2(database)
+    # preform_bundle_window(database, stereo_k, 0, 10)
 
     t = 1
     # new_database = extend_database(database, 60)
