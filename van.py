@@ -202,7 +202,9 @@ def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: Floa
     # plt.ylabel("y")
     plt.title("trajecory of left cameras and ground truth locations")
     plt.legend(('our trajectory', 'ground truth location'))
-    plt.show()
+    plt.savefig("traj.png")
+    plt.clf()
+
 
 
 def plot_locations(x: FloatNDArray, z: FloatNDArray) -> None:
@@ -847,7 +849,6 @@ def reprojection_error2(database: DataBase):
     initialEstimate.insert(x_last, last_frame_pose)
     factors = []
     for i, frame_idx in enumerate(random_track.frame_ids):
-        print(i)
         if i == len(random_track.frame_ids) - 1:
             break
         frame_symbol = gtsam.symbol('x', i + 1)  # camera i
@@ -870,8 +871,6 @@ def reprojection_error2(database: DataBase):
     factor_errors = []
     for factor in factors:
         factor_errors.append(factor.error(initialEstimate))
-
-    print(factor_errors)
     plot_projection_error('reprojection error', left_error, right_error)
     plot_projection_error('factor error', factor_errors)
     plot_reprojection_compared_to_factor_error(left_error, factor_errors)
@@ -882,8 +881,8 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
     initialEstimate = gtsam.Values()
     graph = gtsam.NonlinearFactorGraph()
     x_start = gtsam.symbol('x', start_frame)
-    stereo_model = gtsam.noiseModel.Isotropic.Sigma(3, 1.5)
-    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.1, 0.1, 0.1]))))
+    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 0.5, 0.1]))
+    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
     track_id_to_point = {}
     initialEstimate.insert(x_start, gtsam.Pose3())
     visited_tracks = set()
@@ -892,7 +891,6 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
         frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
         frame_symbols.append(frame_symbol)
         curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans)[0]
-        # all_stereo_cameras.insert(0, curr_camera)
         tracks = database.frames[i].track_ids
         tracks = [track_id for track_id in tracks if len(database.tracks[track_id].frame_ids)>3]
         frame_pose = curr_camera.pose()
@@ -917,33 +915,14 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
     last_frame_pose = result.atPose3(frame_symbols[0])
     print("total error before optimization: ", error_before)
     print("total error after optimization: ", error_after)
-    # loc = np.array(locations).T
-    # plot_locations(loc[0], loc[2])
-    # plot_trajectory(1, result)
-    # plt.show()
     return error_before, error_after, last_frame_pose
 
 
 def preform_bundle(database: DataBase):
     stereo_k = get_stereo_k()
-    all_locations = np.zeros((3450, 3))
-    # i = 0
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     locations = np.zeros((3450, 3))
     jump = 19
-    curr_start_frame = 0
-    # while curr_start_frame < 3449:
-    #     end_frame = find_end_keyframe(database, curr_start_frame)
-    #     print(curr_start_frame, end_frame)
-    #     error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, curr_start_frame,
-    #                                                                        end_frame)
-    #     R = last_frame_pose.rotation().matrix()
-    #     t = last_frame_pose.translation()
-    #     R_t = np.hstack((R, t[:, None]))
-    #     current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
-    #     locations[end_frame] = current_transformation[:, 3]
-    #     curr_start_frame = end_frame
-
     for i in range(0, 3450, jump):
         print(i)
         error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, i, min(i+jump, 3449))
@@ -970,28 +949,28 @@ def find_end_keyframe(database: DataBase, frame_id: int):
     return max(max_frame_set)
 
 
-if __name__ == '__main__':
-    # database = create_database(0, 3449, 0)
-    # compute_camera_locations(0, 1)
-    # save_database(database)
-    # random.seed(2)
-    database = open_database()
-    # reprojection_error2(database)
-    stereo_k = get_stereo_k()
-    l = read_poses().T
-    l2 = preform_bundle(database)
-    plot_trajectury(l2[0], l2[2], l[0], l[2])
-
-    # ploting the distance error in meters
+def plot_local_error(real_locs, est_locs):
     jump = 19
     res = []
-    dist_error = (l-l2)**2
-    error = np.sqrt(dist_error[0]+ dist_error[1]+ dist_error[2])
+    dist_error = (real_locs-est_locs)**2
+    error = np.sqrt(dist_error[0] + dist_error[1] + dist_error[2])
     for i in range(0, 3450, jump):
         res.append(error[min(i+jump, 3449)])
     x = np.arange(len(res))*jump
     plt.plot(x, res)
     plt.title("keyframe localization error in meters")
-    plt.show()
+    plt.savefig("trajectory_local_error.png")
+    plt.clf()
+
+
+if __name__ == '__main__':
+    database = open_database()
+    reprojection_error2(database)
+    stereo_k = get_stereo_k()
+    l = read_poses().T
+    l2 = preform_bundle(database)
+    plot_trajectury(l2[0], l2[2], l[0], l[2])
+    plot_local_error(l, l2)  # ploting the distance error in meters
+
 
 
