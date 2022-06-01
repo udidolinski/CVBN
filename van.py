@@ -10,10 +10,10 @@ import os
 from gtsam import gtsam, utils
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
-DEVIATION_THRESHOLD = 2
-PNP_THRESHOLD = 1
+DEVIATION_THRESHOLD = 0.25
+PNP_THRESHOLD = 0.25
 RANSAC_NUM_SAMPLES = 4
-RANSAC_SUCCESS_PROB = 0.99
+RANSAC_SUCCESS_PROB = 0.95
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -624,7 +624,7 @@ def save_database(database: DataBase) -> None:
     """
     This function save the database to a file.
     """
-    with open("VAN_ex/docs/database.db", "wb") as file:
+    with open("database3.db", "wb") as file:
         pickle.dump(database, file)
 
 
@@ -632,7 +632,7 @@ def open_database() -> DataBase:
     """
     This function open the database file and return thr database object.
     """
-    with open("VAN_ex/docs/database.db", "rb") as file:
+    with open("database4.db", "rb") as file:
         database = pickle.load(file)
     return database
 
@@ -766,7 +766,9 @@ def plot_projection_error(title: str, left_error: List[float], right_error: List
     plt.xlabel('frame')
     plt.ylabel('error')
     plt.title(title)
-    plt.show()
+    plt.savefig("p_e.png")
+    plt.clf()
+    # plt.show()
 
 
 def plot_reprojection_compared_to_factor_error(x_reprojection: List[float], y_factor: List[float]) -> None:
@@ -886,14 +888,17 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
     track_id_to_point = {}
     initialEstimate.insert(x_start, gtsam.Pose3())
     visited_tracks = set()
+    left_error, right_error = [], []
     frame_symbols = []
+    factors = []
     for i in range(end_frame, start_frame - 1, -1):
         frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
         frame_symbols.append(frame_symbol)
         curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans)[0]
         tracks = database.frames[i].track_ids
-        tracks = [track_id for track_id in tracks if len(database.tracks[track_id].frame_ids)>3 and database.tracks[track_id].frame_ids[0]<=end_frame-3 and database.tracks[track_id].frame_ids[-1]>=start_frame+3]
+        tracks = [track_id for track_id in tracks if len(database.tracks[track_id].frame_ids)>3]
         frame_pose = curr_camera.pose()
+        not_insereted = set()
         if i != start_frame:
             initialEstimate.insert(frame_symbol, frame_pose)
 
@@ -903,10 +908,52 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
                 s = gtsam.symbol('l', track_id)  # feature point
                 visited_tracks.add(track_id)
                 point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
-                track_id_to_point[track_id] = s
+                track_id_to_point[track_id] = (s, point_3d)
+                #try:
+                #    curr_camera.project(track_id_to_point[track_id][1])
+                #except RuntimeError:
+                #    not_insereted.add(s)
+                #    continue
                 initialEstimate.insert(s, point_3d)
-            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id], stereo_k)
+
+            #try:
+            #    curr_camera.project(track_id_to_point[track_id][1])
+            #except RuntimeError:
+            #    continue
+            #if track_id == 55337:
+            #    print("hi")
+            #if track_id_to_point[track_id][0] in not_insereted:
+            #    if track_id == 55337:
+            #        print("hi")
+            #    continue
+            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id][0], stereo_k)
+            factors.append(factor)
+            # if factor.error(initialEstimate) > 1000:
+            #     print("bIGGER THAN 1000:")
+            #     print(track_id_to_point[track_id][1])
+            #     projected_p = curr_camera.project(np.array([1,1,8]))
+            #     # left_pt = np.array([projected_p.uL(), projected_p.v()])
+            #     # right_pt = np.array([projected_p.uR(), projected_p.v()])
+            #     # # location = database.tracks[track_id].track_instances[i]
+            #     # left_location = np.array([location.x_l, location.y])
+            #     # right_location = np.array([location.x_r, location.y])
+            #     # left_error.append(calculate_norm(left_pt, left_location))
+            #     # if left_error[-1] > 100:
+            #     #     print("hello")
+            #     # right_error.append(calculate_norm(right_pt, right_location))
+            #     # if right_error[-1] > 100:
+            #     #     print("hello_right")
             graph.add(factor)
+
+    # factor_errors = []
+    # for factor in factors:
+    #     factor_errors.append(factor.error(initialEstimate))
+    # np_factor = np.array(factor_errors)
+    # bigger_than_hundred = np_factor[np_factor > 1000]
+    # plot_projection_error('reprojection error', left_error, right_error)
+    # print(bigger_than_hundred)
+    # print("factors length:", len(factors))
+    # plot_projection_error('factor error', factor_errors)
 
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
@@ -974,21 +1021,110 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo):
     pose_c0 = result.atPose3(c0)
     pose_ck = result.atPose3(ck)
     relative_pose = pose_c0.between(pose_ck)
-    # keys = gtsam.KeyVector()
-    # keys.append(c0)
-    # keys.append(ck)
-    # relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
 
-    print("relative pose: ", relative_pose)
-    # print("the relative marginal covariance matrix: ", relative_marginal_covariance_mat)
+    initialEstimate = gtsam.Values()
+    graph = gtsam.NonlinearFactorGraph()
+    x_start = gtsam.symbol('x', 0)
+    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
+    initialEstimate.insert(x_start, gtsam.Pose3())
+    curr_pose = pose_c0
+    curr_symbol = x_start
+    for frame_symbol in frame_symbols[::-1][1:]:
+        pose_ck = result.atPose3(frame_symbol)
+        initialEstimate.insert(frame_symbol, pose_ck)
+        relative_pose = curr_pose.between(pose_ck)
+        factor = gtsam.BetweenFactorPose3(curr_symbol, frame_symbol, relative_pose, gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1])))
+        graph.add(factor)
+        curr_pose = pose_ck
+        curr_symbol = frame_symbol
+
+    last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
+    # print(last_frame_pose)
+    error_before = graph.error(initialEstimate)
+    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
+    result = optimizer.optimize()
+    error_after = optimizer.error()
+    last_frame_pose = result.atPose3(frame_symbols[0])
+    # print(last_frame_pose)
+    # print("total error before optimization: ", error_before)
+    # print("total error after optimization: ", error_after)
+
+    marginals = gtsam.Marginals(graph, result)  # 6.1.1
+    c0, ck = frame_symbols[-1], frame_symbols[0]
+    pose_c0 = result.atPose3(c0)
+    pose_ck = result.atPose3(ck)
+    relative_pose = pose_c0.between(pose_ck)
+
+
+    create_pose_graph(result, frame_symbols, marginals)
+
+    # plot_trajectory(1, result, marginals=marginals, scale=1)  # 6.1.2
+    # plt.savefig("marg.png")
+    # np.set_printoptions(precision=5, suppress=True)
+    # print("relative pose: \n", relative_pose)
+    # print("the relative marginal covariance matrix: \n", relative_marginal_covariance_mat)
+
+
+def create_pose_graph(result, frame_symbols, marginals):
+    c0, ck = frame_symbols[-1], frame_symbols[0]
+    pose_c0 = result.atPose3(c0)
+    pose_ck = result.atPose3(ck)
+    relative_pose = pose_c0.between(pose_ck)
+
+    initialEstimate = gtsam.Values()
+    graph = gtsam.NonlinearFactorGraph()
+    x_start = gtsam.symbol('x', 0)
+    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
+    initialEstimate.insert(x_start, gtsam.Pose3())
+    curr_pose = pose_c0
+    curr_symbol = x_start
+    for frame_symbol in frame_symbols[::-1][1:]:
+        pose_ck = result.atPose3(frame_symbol)
+        initialEstimate.insert(frame_symbol, pose_ck)
+        relative_pose = curr_pose.between(pose_ck)
+
+        keys = gtsam.KeyVector()
+        keys.append(curr_symbol)
+        keys.append(frame_symbol)
+        relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
+        relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
+        relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat)
+
+        # gtsam.noiseModel()
+
+        factor = gtsam.BetweenFactorPose3(curr_symbol, frame_symbol, relative_pose, relative_marginal_covariance_mat)
+        graph.add(factor)
+        curr_pose = pose_ck
+        curr_symbol = frame_symbol
+
+    last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
+    print(last_frame_pose)
+    error_before = graph.error(initialEstimate)
+    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
+    result = optimizer.optimize()
+    error_after = optimizer.error()
+    last_frame_pose = result.atPose3(frame_symbols[0])
+    print(last_frame_pose)
+    print("total error before optimization: ", error_before)
+    print("total error after optimization: ", error_after)
+
+    c0, ck = frame_symbols[-1], frame_symbols[0]
+    pose_c0 = result.atPose3(c0)
+    pose_ck = result.atPose3(ck)
+    relative_pose = pose_c0.between(pose_ck)
+    np.set_printoptions(precision=5, suppress=True)
+    print("relative pose: \n", relative_pose)
+    # print("the relative marginal covariance matrix: \n", relative_marginal_covariance_mat)
 
 
 if __name__ == '__main__':
     database = open_database()
+    # save_database(database)
     stereo_k = get_stereo_k()
     # ex5
     # reprojection_error2(database)
     # l = read_poses().T
+    # preform_bundle_window(database, stereo_k, 760, 779)
     # l2 = preform_bundle(database)
     # plot_trajectury(l2[0], l2[2], l[0], l[2])
     # plot_local_error(l, l2)  # ploting the distance error in meters
