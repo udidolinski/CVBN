@@ -8,12 +8,13 @@ import random
 from typing import Tuple, Iterator
 import os
 from gtsam import gtsam, utils
+from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
-DEVIATION_THRESHOLD = 0.25
-PNP_THRESHOLD = 0.25
+DEVIATION_THRESHOLD = 0.5
+PNP_THRESHOLD = 0.5
 RANSAC_NUM_SAMPLES = 4
-RANSAC_SUCCESS_PROB = 0.95
+RANSAC_SUCCESS_PROB = 0.99
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -632,7 +633,7 @@ def open_database() -> DataBase:
     """
     This function open the database file and return thr database object.
     """
-    with open("database4.db", "rb") as file:
+    with open("database.db", "rb") as file:
         database = pickle.load(file)
     return database
 
@@ -884,13 +885,14 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
     graph = gtsam.NonlinearFactorGraph()
     x_start = gtsam.symbol('x', start_frame)
     stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 0.5, 0.1]))
-    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
+    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.001, 0.001, 0.001]))))
     track_id_to_point = {}
     initialEstimate.insert(x_start, gtsam.Pose3())
     visited_tracks = set()
     left_error, right_error = [], []
     frame_symbols = []
     factors = []
+    to_remove_landmarks = set()
     for i in range(end_frame, start_frame - 1, -1):
         frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
         frame_symbols.append(frame_symbol)
@@ -907,7 +909,17 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
             if track_id not in visited_tracks:
                 s = gtsam.symbol('l', track_id)  # feature point
                 visited_tracks.add(track_id)
+
                 point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
+
+                landmark = s
+                x = point_3d[0]
+                z = point_3d[2]
+
+                if landmark in to_remove_landmarks or abs(x) > 25 or z > 40 or z < 0:
+                    to_remove_landmarks.add(landmark)
+                    continue
+
                 track_id_to_point[track_id] = (s, point_3d)
                 #try:
                 #    curr_camera.project(track_id_to_point[track_id][1])
@@ -926,7 +938,12 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
             #    if track_id == 55337:
             #        print("hi")
             #    continue
+            landmark = gtsam.symbol('l', track_id)
+            if landmark in to_remove_landmarks:
+                continue
+
             factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id][0], stereo_k)
+
             factors.append(factor)
             # if factor.error(initialEstimate) > 1000:
             #     print("bIGGER THAN 1000:")
@@ -954,6 +971,22 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
     # print(bigger_than_hundred)
     # print("factors length:", len(factors))
     # plot_projection_error('factor error', factor_errors)
+    # to_remove_landmarks = set()
+    # factor_num = graph.nrFactors()
+    # for i in range(1, factor_num):
+    #     f = graph.at(i)
+    #     landmark = f.keys()[1]
+    #     x = initialEstimate.atPoint3(landmark)[0]
+    #     z = initialEstimate.atPoint3(landmark)[2]
+    #     error = f.error(initialEstimate)
+    #     if f.error(initialEstimate) > 300: #abs(x) > 25 or z > 300 or z < 0 or
+    #         to_remove_landmarks.add(landmark)
+    #
+    # for i in range(1, factor_num):
+    #     f = graph.at(i)
+    #     landmark = f.keys()[1]
+    #     if landmark in to_remove_landmarks:
+    #         graph.remove(i)
 
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
@@ -1013,50 +1046,61 @@ def plot_local_error(real_locs, est_locs):
 
 # EX6 start
 
-def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo):
-    graph, result, frame_symbols = preform_bundle_window(database, stereo_k, 0, 19)[3:]
-    # marginals = gtsam.Marginals(graph, result)  # 6.1.1
-    # plot_trajectory(1, result, marginals=marginals, scale=1)  # 6.1.2
-    c0, ck = frame_symbols[-1], frame_symbols[0]
-    pose_c0 = result.atPose3(c0)
-    pose_ck = result.atPose3(ck)
-    relative_pose = pose_c0.between(pose_ck)
-
-    initialEstimate = gtsam.Values()
-    graph = gtsam.NonlinearFactorGraph()
-    x_start = gtsam.symbol('x', 0)
-    graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
-    initialEstimate.insert(x_start, gtsam.Pose3())
-    curr_pose = pose_c0
-    curr_symbol = x_start
-    for frame_symbol in frame_symbols[::-1][1:]:
-        pose_ck = result.atPose3(frame_symbol)
-        initialEstimate.insert(frame_symbol, pose_ck)
-        relative_pose = curr_pose.between(pose_ck)
-        factor = gtsam.BetweenFactorPose3(curr_symbol, frame_symbol, relative_pose, gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1])))
-        graph.add(factor)
-        curr_pose = pose_ck
-        curr_symbol = frame_symbol
-
-    last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
-    # print(last_frame_pose)
-    error_before = graph.error(initialEstimate)
-    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
-    result = optimizer.optimize()
-    error_after = optimizer.error()
-    last_frame_pose = result.atPose3(frame_symbols[0])
-    # print(last_frame_pose)
-    # print("total error before optimization: ", error_before)
-    # print("total error after optimization: ", error_after)
+def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first, last):
+    graph, result, frame_symbols = preform_bundle_window(database, stereo_k, first, last)[3:]
+    factor_num = graph.nrFactors()
+    s = gtsam.symbol('l', 2103)
+    for i in range(1, factor_num):
+        f = graph.at(i)
+        d = f.keys()
+        x = result.atPoint3(d[1])[0]
+        z = result.atPoint3(d[1])[2]
+        if abs(x) > 25 or z > 107 or z < 0 or f.error(result) > 300:
+            pass
 
     marginals = gtsam.Marginals(graph, result)  # 6.1.1
-    c0, ck = frame_symbols[-1], frame_symbols[0]
-    pose_c0 = result.atPose3(c0)
-    pose_ck = result.atPose3(ck)
-    relative_pose = pose_c0.between(pose_ck)
+    plot_trajectory(1, result, marginals=marginals, scale=2)  # 6.1.2
+    plt.show()
+    # c0, ck = frame_symbols[-1], frame_symbols[0]
+    # pose_c0 = result.atPose3(c0)
+    # pose_ck = result.atPose3(ck)
+    # relative_pose = pose_c0.between(pose_ck)
+    #
+    # initialEstimate = gtsam.Values()
+    # graph = gtsam.NonlinearFactorGraph()
+    # x_start = gtsam.symbol('x', 0)
+    # graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
+    # initialEstimate.insert(x_start, gtsam.Pose3())
+    # curr_pose = pose_c0
+    # curr_symbol = x_start
+    # for frame_symbol in frame_symbols[::-1][1:]:
+    #     pose_ck = result.atPose3(frame_symbol)
+    #     initialEstimate.insert(frame_symbol, pose_ck)
+    #     relative_pose = curr_pose.between(pose_ck)
+    #     factor = gtsam.BetweenFactorPose3(curr_symbol, frame_symbol, relative_pose, gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1])))
+    #     graph.add(factor)
+    #     curr_pose = pose_ck
+    #     curr_symbol = frame_symbol
+    #
+    # last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
+    # # print(last_frame_pose)
+    # error_before = graph.error(initialEstimate)
+    # optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
+    # result = optimizer.optimize()
+    # error_after = optimizer.error()
+    # last_frame_pose = result.atPose3(frame_symbols[0])
+    # # print(last_frame_pose)
+    # # print("total error before optimization: ", error_before)
+    # # print("total error after optimization: ", error_after)
+    #
+    # marginals = gtsam.Marginals(graph, result)  # 6.1.1
+    # # c0, ck = frame_symbols[-1], frame_symbols[0]
+    # # pose_c0 = result.atPose3(c0)
+    # # pose_ck = result.atPose3(ck)
+    # # relative_pose = pose_c0.between(pose_ck)
 
 
-    create_pose_graph(result, frame_symbols, marginals)
+    # create_pose_graph(result, frame_symbols, marginals)
 
     # plot_trajectory(1, result, marginals=marginals, scale=1)  # 6.1.2
     # plt.savefig("marg.png")
@@ -1130,6 +1174,11 @@ if __name__ == '__main__':
     # plot_local_error(l, l2)  # ploting the distance error in meters
 
     # ex6
-    extract_relative_pose(database, stereo_k)
+    jump = 19
+    for i in range(0, 3450, jump):
+        if i == 608:
+            f = 5
+        print(i)
+        extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
 
 
