@@ -1076,7 +1076,7 @@ def create_pose_graph(database, stereo_k):
 
         relative_pose = curr_pose.inverse().between(pose_ck)
         initialEstimate.insert(ck, relative_pose)
-        factor = gtsam.BetweenFactorPose3(curr_symbol, ck, curr_pose.between(pose_ck), relative_marginal_covariance_mat)
+        factor = gtsam.BetweenFactorPose3(curr_symbol, ck, curr_pose.between(relative_pose), relative_marginal_covariance_mat)
         graph.add(factor)
         curr_pose = relative_pose
         curr_symbol = ck
