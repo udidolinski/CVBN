@@ -2,6 +2,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
+from VAN_ex.utils import Node, search
 from image_utils import *
 import pickle
 import random
@@ -9,6 +10,7 @@ from typing import Tuple, Iterator
 import os
 from gtsam import gtsam, utils
 from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
+from gtsam.noiseModel import Gaussian
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
 DEVIATION_THRESHOLD = 0.5
@@ -1004,54 +1006,17 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     relative_pose = pose_c0.between(pose_ck)
     relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
     relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
-    relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat)
+
+    relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat, False)
     np.set_printoptions(precision=5, suppress=True)
     # print("relative pose: \n", relative_pose)  # 6.1.3
     # print("the relative marginal covariance matrix: \n", relative_marginal_covariance_mat)  # 6.1.3
     return pose_ck, ck, relative_marginal_covariance_mat
-    #
-    # initialEstimate = gtsam.Values()
-    # graph = gtsam.NonlinearFactorGraph()
-    # x_start = gtsam.symbol('x', 0)
-    # graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1]))))
-    # initialEstimate.insert(x_start, gtsam.Pose3())
-    # curr_pose = pose_c0
-    # curr_symbol = x_start
-    # for frame_symbol in frame_symbols[::-1][1:]:
-    #     pose_ck = result.atPose3(frame_symbol)
-    #     initialEstimate.insert(frame_symbol, pose_ck)
-    #     relative_pose = curr_pose.between(pose_ck)
-    #     factor = gtsam.BetweenFactorPose3(curr_symbol, frame_symbol, relative_pose, gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 1, 1, 1, 1, 1])))
-    #     graph.add(factor)
-    #     curr_pose = pose_ck
-    #     curr_symbol = frame_symbol
-    #
-    # last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
-    # # print(last_frame_pose)
-    # error_before = graph.error(initialEstimate)
-    # optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
-    # result = optimizer.optimize()
-    # error_after = optimizer.error()
-    # last_frame_pose = result.atPose3(frame_symbols[0])
-    # # print(last_frame_pose)
-    # # print("total error before optimization: ", error_before)
-    # # print("total error after optimization: ", error_after)
-    #
-    # marginals = gtsam.Marginals(graph, result)  # 6.1.1
-    # # c0, ck = frame_symbols[-1], frame_symbols[0]
-    # # pose_c0 = result.atPose3(c0)
-    # # pose_ck = result.atPose3(ck)
-    # # relative_pose = pose_c0.between(pose_ck)
 
-
-    # create_pose_graph(result, frame_symbols, marginals)
-
-    # plot_trajectory(1, result, marginals=marginals, scale=1)  # 6.1.2
-    # plt.savefig("marg.png")
-    # np.set_printoptions(precision=5, suppress=True)
 
 
 def create_pose_graph(database, stereo_k):
+
     initial_poses = np.zeros((3450, 3))
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     x_start = gtsam.symbol('x', 0)
@@ -1062,8 +1027,12 @@ def create_pose_graph(database, stereo_k):
     initialEstimate.insert(x_start, gtsam.Pose3())
     curr_pose = gtsam.Pose3()
     curr_symbol = x_start
+    start_node = Node(x_start, {})
+    curr_node = start_node
+    all_nodes = [start_node]
     jump = 19
     for i in range(0, 3450, jump):
+
         print(i)
         # extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
         pose_ck, ck, relative_marginal_covariance_mat = extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
@@ -1073,13 +1042,19 @@ def create_pose_graph(database, stereo_k):
         R_t = np.hstack((R, t[:, None]))
         current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
         initial_poses[min(i+jump, 3449)] = current_transformation[:, 3]
-
         relative_pose = curr_pose.inverse().between(pose_ck)
         initialEstimate.insert(ck, relative_pose)
+        next_node = Node(ck, {})
+        next_node.add_neighbor(curr_node, relative_marginal_covariance_mat)
+        all_nodes.append(next_node)
+        curr_node.add_neighbor(next_node, relative_marginal_covariance_mat)
         factor = gtsam.BetweenFactorPose3(curr_symbol, ck, curr_pose.between(relative_pose), relative_marginal_covariance_mat)
         graph.add(factor)
         curr_pose = relative_pose
         curr_symbol = ck
+        curr_node = next_node
+        # x = mahalanobis_distance(relative_marginal_covariance_mat, relative_pose) / 1000000
+        # c= 1
 
     # last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
     # print(last_frame_pose)
@@ -1090,6 +1065,7 @@ def create_pose_graph(database, stereo_k):
     print("total error before optimization: ", error_before)
     print("total error after optimization: ", error_after)
     marginals = gtsam.Marginals(graph, result)
+
     plot_trajectory(1, result, scale=2, title="Locations as a 3D")
     plt.show()
     plot_trajectory(1, result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")
@@ -1097,7 +1073,8 @@ def create_pose_graph(database, stereo_k):
 
     initial_poses = initial_poses.T
     plot_initial_pose(initial_poses[0], initial_poses[2])
-    return
+    return all_nodes
+
 
 def plot_initial_pose(x, z):
     plt.scatter(x, z, c='blue', s=2)
@@ -1106,6 +1083,23 @@ def plot_initial_pose(x, z):
     plt.title("trajecory of initial poses")
     plt.savefig("traj_initial.png")
     plt.clf()
+
+
+# ex6 ends
+
+
+# ex7 start
+
+def get_relative_covariance(c_n: Node, c_i: Node):  # a
+    return search(c_n, c_i)
+
+
+def mahalanobis_distance(covariance: gtsam.noiseModel.Gaussian.Covariance, relative_pose: gtsam.Pose3):  # b
+    location = relative_pose.translation()
+    angles = relative_pose.rotation().xyz()
+    relative_vec = np.hstack((location, angles))
+    return relative_vec.T @ covariance.information() @ relative_vec
+
 
 if __name__ == '__main__':
     database = open_database()
@@ -1120,24 +1114,10 @@ if __name__ == '__main__':
     # plot_local_error(l, l2)  # ploting the distance error in meters
 
     # ex6
-    # extract_relative_pose(database, stereo_k, 0, 19)
-    # initial_poses = np.zeros((3450, 3))
-    # current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
-    # jump = 19
-    # for i in range(0, 3450, jump):
-    #     if i == 608:
-    #         f = 5
-    #     print(i)
-    #     # extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
-    #     result, frame_symbols, marginals = extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
-    #     initial_pose = create_pose_graph(result, frame_symbols, marginals, i)
-    #     R = initial_pose.rotation().matrix()
-    #     t = initial_pose.translation()
-    #     R_t = np.hstack((R, t[:,None]))
-    #     current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
-    #     initial_poses[min(i+jump, 3449)] = current_transformation[:,3]
     # initial_poses = initial_poses.T
     # plot_initial_pose(initial_poses[0], initial_poses[2])
-    create_pose_graph(database, stereo_k)
+    all_nodes = create_pose_graph(database, stereo_k)
+    cov = get_relative_covariance(all_nodes[0], all_nodes[10])
+    a = 1
 
 
