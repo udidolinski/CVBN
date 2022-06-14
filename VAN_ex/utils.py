@@ -14,7 +14,11 @@ class PriorityQueue:
             try:
                 item < item
             except Exception:
-                item.__class__.__lt__ = lambda x, y: (True)
+                if cov_sum is None:
+                    self.init = False
+                else:
+                    cov_sum.__class__.__lt__ = lambda x, y: (True)
+                    item.__class__.__lt__ = lambda x, y: (True)
         pair = (priority, item, cov_sum)
         heapq.heappush(self.heap, pair)
 
@@ -35,8 +39,8 @@ class Node:
     def __eq__(self, other):
         return self.__symbol == other.__symbol
 
-    def __lt__(self, other):
-        return self.__symbol < other.__symbol
+    # def __lt__(self, other):
+    #     return self.__symbol < other.__symbol
 
     def __hash__(self):
         return hash(self.__symbol)
@@ -68,19 +72,19 @@ def get_weight(current_node, neighbor):
 def search(s_node: Node, t_node: Node):
     visited_nodes = set()
     min_heap = PriorityQueue()
-    min_heap.push(s_node, 0, gtsam.noiseModel.Gaussian.Covariance(np.zeros((6, 6))))
+    # push(self, item, priority, cov_sum)
+    min_heap.push(s_node, 0, None)
     while not min_heap.isEmpty():
         current_node, curr_priority, current_cov_sum = min_heap.pop()
         if current_node == t_node:
-            return current_cov_sum
+            return current_cov_sum, True
         elif current_node not in visited_nodes:
-            # neighbors = current_node.covariance_neighbors
             for neighbor, covariance in current_node.get_neighbors_cov_dict().items():
-                # node = Node(neighbor.symbol, current_node.covariance+neighbor.covariance, neighbor.neighbors)
                 edge_weight = get_weight(current_node, neighbor)
-                min_heap.push(neighbor, curr_priority+edge_weight, gtsam.noiseModel.Gaussian.Covariance(current_cov_sum.covariance()+covariance.covariance()))
+                information_sum = current_cov_sum.covariance() + covariance.covariance() if current_cov_sum is not None else covariance.covariance()
+                min_heap.push(neighbor, curr_priority+edge_weight, gtsam.noiseModel.Gaussian.Covariance(information_sum))
         visited_nodes.add(current_node)
-    return np.zeros((6, 6))
+    return np.zeros((6, 6)), False
 
 # e = Node(1, {})
 # d = Node(2, {})

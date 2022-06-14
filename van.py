@@ -10,6 +10,7 @@ from typing import Tuple, Iterator
 import os
 from gtsam import gtsam, utils
 from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
+# from gtsam.gtsam import BetweenFactorPose3
 from gtsam.noiseModel import Gaussian
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
@@ -17,6 +18,7 @@ DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 0.5
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
+MAHALANOBIS_DISTANCE_TEST = 60
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -1015,7 +1017,7 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
 
 
 
-def create_pose_graph(database, stereo_k):
+def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph]:
 
     initial_poses = np.zeros((3450, 3))
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
@@ -1024,23 +1026,28 @@ def create_pose_graph(database, stereo_k):
     graph = gtsam.NonlinearFactorGraph()
 
     graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001,0.001,0.001,0.001,0.001]))))
+    # graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([1,1,1, 1, 1, 1]))))
     initialEstimate.insert(x_start, gtsam.Pose3())
     curr_pose = gtsam.Pose3()
     curr_symbol = x_start
     start_node = Node(x_start, {})
     curr_node = start_node
     all_nodes = [start_node]
+    all_poses= [gtsam.Pose3()]
     jump = 19
     for i in range(0, 3450, jump):
 
         print(i)
         # extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
         pose_ck, ck, relative_marginal_covariance_mat = extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
-
         R = pose_ck.rotation().matrix()
         t = pose_ck.translation()
         R_t = np.hstack((R, t[:, None]))
         current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
+
+        global_pose_ck = gtsam.Pose3(gtsam.Rot3(current_transformation[:, :3]), current_transformation[:, 3])
+        all_poses.append(global_pose_ck)
+
         initial_poses[min(i+jump, 3449)] = current_transformation[:, 3]
         relative_pose = curr_pose.inverse().between(pose_ck)
         initialEstimate.insert(ck, relative_pose)
@@ -1066,14 +1073,14 @@ def create_pose_graph(database, stereo_k):
     print("total error after optimization: ", error_after)
     marginals = gtsam.Marginals(graph, result)
 
-    plot_trajectory(1, result, scale=2, title="Locations as a 3D")
-    plt.show()
-    plot_trajectory(1, result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")
-    plt.show()
+    # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
+    # plt.show()
+    # plot_trajectory(1, result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")
+    # plt.show()
 
     initial_poses = initial_poses.T
     plot_initial_pose(initial_poses[0], initial_poses[2])
-    return all_nodes
+    return all_poses, all_nodes, graph
 
 
 def plot_initial_pose(x, z):
@@ -1094,12 +1101,30 @@ def get_relative_covariance(c_n: Node, c_i: Node):  # a
     return search(c_n, c_i)
 
 
-def mahalanobis_distance(covariance: gtsam.noiseModel.Gaussian.Covariance, relative_pose: gtsam.Pose3):  # b
+def mahalanobis_distance(covariance: gtsam.noiseModel.Gaussian.Covariance, relative_pose: gtsam.Pose3):
     location = relative_pose.translation()
     angles = relative_pose.rotation().xyz()
-    relative_vec = np.hstack((location, angles))
+    relative_vec = np.hstack((angles, location))  # todo check if covariance need (angles, location) or (location, angles)
+    # return relative_vec.T @ relative_vec
     return relative_vec.T @ covariance.information() @ relative_vec
 
+
+def detect_possible_candidates(covariance: gtsam.noiseModel.Gaussian.Covariance, relative_pose: gtsam.Pose3):  # b
+    return mahalanobis_distance(covariance, relative_pose) < MAHALANOBIS_DISTANCE_TEST
+
+
+def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph):
+    count = 0
+    for c_n_idx in range(1, len(all_nodes)):
+        for c_i_idx in range(c_n_idx):
+            cov, success = get_relative_covariance(all_nodes[c_n_idx], all_nodes[c_i_idx])
+            rel_pos = all_poses[c_i_idx].inverse().between(all_poses[c_n_idx])
+            mahalanobis_dist = mahalanobis_distance(cov, rel_pos) / 1000000
+            if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST and c_n_idx-c_i_idx >= 30:
+                count += 1
+                print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+                print("Mahalanobis distance:", mahalanobis_dist)
+    print(count)
 
 if __name__ == '__main__':
     database = open_database()
@@ -1116,8 +1141,8 @@ if __name__ == '__main__':
     # ex6
     # initial_poses = initial_poses.T
     # plot_initial_pose(initial_poses[0], initial_poses[2])
-    all_nodes = create_pose_graph(database, stereo_k)
-    cov = get_relative_covariance(all_nodes[0], all_nodes[10])
+    all_poses, all_nodes, graph = create_pose_graph(database, stereo_k)
+    detect_loop_closure_candidates(all_poses, all_nodes, graph)
     a = 1
 
 
