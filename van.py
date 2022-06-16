@@ -15,7 +15,8 @@ from gtsam.noiseModel import Gaussian
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
 DEVIATION_THRESHOLD = 0.5
-PNP_THRESHOLD = 0.5
+# PNP_THRESHOLD = 0.5
+PNP_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
 MAHALANOBIS_DISTANCE_TEST = 10
@@ -413,10 +414,12 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
     # Repeat 1
     i = 0
     while i <= num_iter:
+        print("first part: index and num_iter", i, num_iter)
         max_num_inliers, num_iter = ransac_helper(quad, k, max_num_inliers, True, p, s, num_iter)[:2]
         i += 1
     # Repeat 2
     for j in range(5):
+        print("secondb part: index and num_iter", j, num_iter)
         max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s,
                                                                            num_iter,
                                                                            quad.stereo_pair2.left_image.get_inliers_kps_idx(
@@ -1107,7 +1110,6 @@ def mahalanobis_distance(covariance: gtsam.noiseModel.Gaussian.Covariance, relat
     location = relative_pose.translation()
     angles = relative_pose.rotation().xyz()
     relative_vec = np.hstack((angles, location))  # todo check if covariance need (angles, location) or (location, angles)
-    # return relative_vec.T @ relative_vec
     return relative_vec.T @ covariance.information() @ relative_vec
 
 
@@ -1123,30 +1125,18 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
             rel_pos = all_poses[c_i_idx].between(all_poses[c_n_idx])
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos) / 1000000
             if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST and c_n_idx-c_i_idx >= 30:
-                count += 1
-                print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
-                print("Mahalanobis distance:", mahalanobis_dist)
+                if consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449)) >= 0.8:
+                    count += 1
+                    print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+                # print("Mahalanobis distance:", mahalanobis_dist)
     print(count)
 
 
-def consensus_matching(img_idx_1: int, img_idx_2: int) -> bool:
-    stereo_k = get_stereo_k()
-    img1, img2 = read_and_detect_images(img_idx_1, img_idx_2)
-    img1.set_inliers_kps(list(range(len(img1.kps))))
-    img1.set_quad_inliers_kps_idx(list(range(len(img1.kps))))
-    img2.set_inliers_kps(list(range(len(img2.kps))))
-    img2.set_quad_inliers_kps_idx(list(range(len(img2.kps))))
-    matches = match_key_points(img1, img2)
-    stereo_pair1 = StereoPair(img1, img2, (img_idx_1, img_idx_2), matches)
-    stereo_pair2 = StereoPair(img2, img1, (img_idx_2, img_idx_1), matches)
-    stereo_pair1.set_rectified_inliers_matches_idx(np.arange(len(matches)))
-    stereo_pair1.set_quad_inliers_matches_idx(list(range(len(matches))))
-    stereo_pair2.set_rectified_inliers_matches_idx(np.arange(len(matches)))
-    stereo_pair2.set_quad_inliers_matches_idx(list(range(len(matches))))
-    quad = Quad(stereo_pair1, stereo_pair2, matches)
-    inliers_num = ransac(0, 0, stereo_k, quad=quad)[1]
-    return inliers_num >= INLIERS_THRESHOLD
-
+def consensus_matching(img_idx_1: int, img_idx_2: int) -> float:
+    k = read_cameras()[0]
+    quad, max_num_inliers = ransac(img_idx_1, img_idx_2, k, None)
+    print(max_num_inliers)
+    return max_num_inliers / len(quad.get_left_left_kps_idx_dict())
 
 
 def read_and_detect_images(img_idx_1, img_idx_2):
@@ -1177,7 +1167,10 @@ if __name__ == '__main__':
     # plot_initial_pose(initial_poses[0], initial_poses[2])
     # all_poses, all_nodes, graph = create_pose_graph(database, stereo_k)
     # detect_loop_closure_candidates(all_poses, all_nodes, graph)
-    print(consensus_matching(3439, 437))
+    k=read_cameras()[0]
+    q, max_num = ransac(3439, 437, k, None)
+
+    # print(consensus_matching(3439, 437))
     a = 1
 
 
