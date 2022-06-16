@@ -18,7 +18,8 @@ DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 0.5
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
-MAHALANOBIS_DISTANCE_TEST = 60
+MAHALANOBIS_DISTANCE_TEST = 10
+INLIERS_THRESHOLD = 100
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -42,7 +43,7 @@ def show_key_points(idx: int, kps1: NDArray[KeyPoint], kps2: NDArray[KeyPoint]) 
 
 def detect_key_points(idx: int) -> Tuple[Image, Image]:
     img1_mat, img2_mat = read_images(idx, ImageColor.GRAY)
-    detector = cv2.AKAZE_create()
+    detector = cv2.SIFT_create()
     kps1, des1 = detector.detectAndCompute(img1_mat, None)
     kps2, des2 = detector.detectAndCompute(img2_mat, None)
     img1 = Image(img1_mat, np.array(kps1), des1)
@@ -401,13 +402,14 @@ def ransac_helper(quad: Quad, k: FloatNDArray, max_num_inliers: int, p3p: bool, 
     return max_num_inliers, num_iter, False
 
 
-def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: StereoPair) -> Quad:
+def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: StereoPair = None, quad: Quad = None) -> Tuple[Quad, int]:
     s = RANSAC_NUM_SAMPLES
     p = RANSAC_SUCCESS_PROB
     epsilon = 0.85
     num_iter = compute_num_of_iter(p, epsilon, s)
     max_num_inliers = 0
-    quad = create_quad(img_idx1, img_idx2, curr_stereo_pair2)
+    if not quad:
+        quad = create_quad(img_idx1, img_idx2, curr_stereo_pair2)
     # Repeat 1
     i = 0
     while i <= num_iter:
@@ -424,7 +426,7 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
     # if img_idx1 == 0:
     #     compute_2_3d_clouds(quad.get_relative_trans(), quad)
     # present_inliers_and_outliers(*best_compute_lst2)
-    return quad
+    return quad, max_num_inliers
 
 
 def plot_3d_clouds(points_3d_pair2: FloatNDArray, points_3d_pair2_projected2: FloatNDArray) -> None:
@@ -496,7 +498,7 @@ def trajectory() -> FloatNDArray:
         print("****************************************************************")
         print(i)
         print("****************************************************************")
-        current_quad = ransac(i, i + 1, k, curr_stereo_pair2)
+        current_quad = ransac(i, i + 1, k, curr_stereo_pair2)[0]
         transformation_i_to_i_plus_1, curr_stereo_pair2 = current_quad.get_relative_trans(), current_quad.stereo_pair2
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
         locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)
@@ -511,7 +513,7 @@ def create_quads(start_frame_id: int, end_frame_id: int) -> Iterator[Quad]:
     curr_stereo_pair2 = None
     for i in range(start_frame_id, end_frame_id):
         print(i)
-        current_quad = ransac(i, i + 1, k, curr_stereo_pair2)
+        current_quad = ransac(i, i + 1, k, curr_stereo_pair2)[0]
         yield current_quad
         curr_stereo_pair2 = current_quad.stereo_pair2
 
@@ -1118,13 +1120,45 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
             cov, success = get_relative_covariance(all_nodes[c_n_idx], all_nodes[c_i_idx])
-            rel_pos = all_poses[c_i_idx].inverse().between(all_poses[c_n_idx])
+            rel_pos = all_poses[c_i_idx].between(all_poses[c_n_idx])
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos) / 1000000
             if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST and c_n_idx-c_i_idx >= 30:
                 count += 1
                 print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
                 print("Mahalanobis distance:", mahalanobis_dist)
     print(count)
+
+
+def consensus_matching(img_idx_1: int, img_idx_2: int) -> bool:
+    stereo_k = get_stereo_k()
+    img1, img2 = read_and_detect_images(img_idx_1, img_idx_2)
+    img1.set_inliers_kps(list(range(len(img1.kps))))
+    img1.set_quad_inliers_kps_idx(list(range(len(img1.kps))))
+    img2.set_inliers_kps(list(range(len(img2.kps))))
+    img2.set_quad_inliers_kps_idx(list(range(len(img2.kps))))
+    matches = match_key_points(img1, img2)
+    stereo_pair1 = StereoPair(img1, img2, (img_idx_1, img_idx_2), matches)
+    stereo_pair2 = StereoPair(img2, img1, (img_idx_2, img_idx_1), matches)
+    stereo_pair1.set_rectified_inliers_matches_idx(np.arange(len(matches)))
+    stereo_pair1.set_quad_inliers_matches_idx(list(range(len(matches))))
+    stereo_pair2.set_rectified_inliers_matches_idx(np.arange(len(matches)))
+    stereo_pair2.set_quad_inliers_matches_idx(list(range(len(matches))))
+    quad = Quad(stereo_pair1, stereo_pair2, matches)
+    inliers_num = ransac(0, 0, stereo_k, quad=quad)[1]
+    return inliers_num >= INLIERS_THRESHOLD
+
+
+
+def read_and_detect_images(img_idx_1, img_idx_2):
+    img1_mat = read_images(img_idx_1, ImageColor.GRAY)[0]
+    img2_mat = read_images(img_idx_2, ImageColor.GRAY)[0]
+    detector = cv2.SIFT_create()
+    kps1, des1 = detector.detectAndCompute(img1_mat, None)
+    kps2, des2 = detector.detectAndCompute(img2_mat, None)
+    img1 = Image(img1_mat, np.array(kps1), des1)
+    img2 = Image(img2_mat, np.array(kps2), des2)
+    return img1, img2
+
 
 if __name__ == '__main__':
     database = open_database()
@@ -1141,8 +1175,9 @@ if __name__ == '__main__':
     # ex6
     # initial_poses = initial_poses.T
     # plot_initial_pose(initial_poses[0], initial_poses[2])
-    all_poses, all_nodes, graph = create_pose_graph(database, stereo_k)
-    detect_loop_closure_candidates(all_poses, all_nodes, graph)
+    # all_poses, all_nodes, graph = create_pose_graph(database, stereo_k)
+    # detect_loop_closure_candidates(all_poses, all_nodes, graph)
+    print(consensus_matching(3439, 437))
     a = 1
 
 

@@ -81,8 +81,8 @@ def search(s_node: Node, t_node: Node):
         elif current_node not in visited_nodes:
             for neighbor, covariance in current_node.get_neighbors_cov_dict().items():
                 edge_weight = get_weight(current_node, neighbor)
-                information_sum = current_cov_sum.covariance() + covariance.covariance() if current_cov_sum is not None else covariance.covariance()
-                min_heap.push(neighbor, curr_priority+edge_weight, gtsam.noiseModel.Gaussian.Covariance(information_sum))
+                cov_sum = current_cov_sum.covariance() + covariance.covariance() if current_cov_sum is not None else covariance.covariance()
+                min_heap.push(neighbor, curr_priority+edge_weight, gtsam.noiseModel.Gaussian.Covariance(cov_sum))
         visited_nodes.add(current_node)
     return np.zeros((6, 6)), False
 
