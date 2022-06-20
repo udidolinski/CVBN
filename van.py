@@ -830,11 +830,15 @@ def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]
     return new_R, new_t[:, None]
 
 
-def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans) -> Tuple[
+def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans, frame_pose: gtsam.Pose3=None) -> Tuple[
     gtsam.StereoCamera, gtsam.Pose3]:
-    curr_frame = database.frames[frame_idx]
-    new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
+    if frame_pose is None:
+        curr_frame = database.frames[frame_idx]
+        new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
+    else:
 
+        # new_R, new_t = get_camera_to_global(np.hstack((frame_pose.rotation().matrix(), frame_pose.translation().reshape((3, 1)))))
+        new_R, new_t = frame_pose.rotation().matrix(), frame_pose.translation().reshape((3, 1))
     i_to_zero_trans = np.hstack((new_R, new_t))
     i_to_start_trans = compute_extrinsic_matrix(i_to_zero_trans, start_frame_trans)
     new_R = i_to_start_trans[:, :3]
@@ -892,7 +896,8 @@ def reprojection_error2(database: DataBase):
     plot_reprojection_compared_to_factor_error(left_error, factor_errors)
 
 
-def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, start_frame: int, end_frame: int) -> Tuple[float, float, List[FloatNDArray], gtsam.NonlinearFactorGraph, gtsam.Values, List[int]]:
+def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bundle_frames: List[int], frame_poses: List[Union[gtsam.Pose3, None]], inliers_locs = None) -> Tuple[float, float, List[FloatNDArray], gtsam.NonlinearFactorGraph, gtsam.Values, List[int]]:
+    start_frame = bundle_frames[0]
     start_frame_trans = database.frames[start_frame].transformation_from_zero
     initialEstimate = gtsam.Values()
     graph = gtsam.NonlinearFactorGraph()
@@ -905,40 +910,68 @@ def preform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, sta
     frame_symbols = []
     factors = []
     to_remove_landmarks = set()
-    for i in range(end_frame, start_frame - 1, -1):
+    for i, frame_init_pose in zip(bundle_frames[::-1], frame_poses[::-1]):
         frame_symbol = gtsam.symbol('x', i) if i != start_frame else x_start  # camera i
         frame_symbols.append(frame_symbol)
-        curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans)[0]
+        curr_camera = create_stereo_camera(database, i, stereo_k, start_frame_trans, frame_init_pose)[0]
         tracks = database.frames[i].track_ids
         tracks = [track_id for track_id in tracks if len(database.tracks[track_id].frame_ids)>3]
         frame_pose = curr_camera.pose()
         if i != start_frame:
             initialEstimate.insert(frame_symbol, frame_pose)
+        if frame_poses[0] is not None:
+            # relative_pose = curr_pose.inverse().between(pose_ck)
+            # factor = gtsam.BetweenFactorPose3(curr_symbol, ck, curr_pose.between(relative_pose), relative_marginal_covariance_mat)
+            # graph.add(factor)
 
-        for track_id in tracks:
-            location = get_feature_locations(i, track_id, database)
-            if track_id not in visited_tracks:
-                s = gtsam.symbol('l', track_id)  # feature point
-                visited_tracks.add(track_id)
-                point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
-                track_id_to_point[track_id] = (s, point_3d)
-                landmark = s
-                x = point_3d[0]
-                z = point_3d[2]
-                if landmark in to_remove_landmarks or abs(x) > 25 or z > 87 or z < 0:
+            for loc_idx,loc_tup in enumerate(inliers_locs):
+                location = loc_tup[0 if i == start_frame else 1]
+                if i != start_frame:
+                    s = gtsam.symbol('l', loc_idx)  # feature point
+                    point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
+                    track_id_to_point[loc_idx] = (s, point_3d)
+                    landmark = s
+                    x = point_3d[0]
+                    z = point_3d[2]
+                    if landmark in to_remove_landmarks or abs(x) > 25 or z > 87 or z < 0:
+                        to_remove_landmarks.add(landmark)
+                        continue
+                    initialEstimate.insert(s, point_3d)
+                landmark = gtsam.symbol('l', loc_idx)
+                factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[loc_idx][0], stereo_k)
+                if landmark in to_remove_landmarks:
+                    continue
+                if factor.error(initialEstimate) > 5000:
+                    initialEstimate.erase(track_id_to_point[loc_idx][0])
                     to_remove_landmarks.add(landmark)
                     continue
-                initialEstimate.insert(s, point_3d)
-            landmark = gtsam.symbol('l', track_id)
-            factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id][0], stereo_k)
-            if landmark in to_remove_landmarks:
-                continue
-            if factor.error(initialEstimate) > 5000:
-                initialEstimate.erase(track_id_to_point[track_id][0])
-                to_remove_landmarks.add(landmark)
-                continue
-            factors.append(factor)
-            graph.add(factor)
+                factors.append(factor)
+                graph.add(factor)
+        else:
+            for track_id in tracks:
+                location = get_feature_locations(i, track_id, database)
+                if track_id not in visited_tracks:
+                    s = gtsam.symbol('l', track_id)  # feature point
+                    visited_tracks.add(track_id)
+                    point_3d = curr_camera.backproject(gtsam.StereoPoint2(*location))
+                    track_id_to_point[track_id] = (s, point_3d)
+                    landmark = s
+                    x = point_3d[0]
+                    z = point_3d[2]
+                    if landmark in to_remove_landmarks or abs(x) > 25 or z > 87 or z < 0:
+                        to_remove_landmarks.add(landmark)
+                        continue
+                    initialEstimate.insert(s, point_3d)
+                landmark = gtsam.symbol('l', track_id)
+                factor = gtsam.GenericStereoFactor3D(gtsam.StereoPoint2(*location), stereo_model, frame_symbol, track_id_to_point[track_id][0], stereo_k)
+                if landmark in to_remove_landmarks:
+                    continue
+                if factor.error(initialEstimate) > 5000:
+                    initialEstimate.erase(track_id_to_point[track_id][0])
+                    to_remove_landmarks.add(landmark)
+                    continue
+                factors.append(factor)
+                graph.add(factor)
     factor_num = graph.nrFactors()
     for i in range(1, factor_num):
         f = graph.at(i)
@@ -963,7 +996,8 @@ def preform_bundle(database: DataBase):
     jump = 19
     for i in range(0, 3450, jump):
         print(i)
-        error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, i, min(i+jump, 3449))[:3]
+        bundle_frames = list(range(i, min(i+jump, 3449)+1))
+        error_before, error_after, last_frame_pose = preform_bundle_window(database, stereo_k, bundle_frames, [None]*jump)[:3]
         R = last_frame_pose.rotation().matrix()
         t = last_frame_pose.translation()
         R_t = np.hstack((R, t[:,None]))
@@ -1003,11 +1037,11 @@ def plot_local_error(real_locs, est_locs):
 # EX6 start
 
 def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first, last):  # q 6.1
-    graph, result, frame_symbols = preform_bundle_window(database, stereo_k, first, last)[3:]
-
+    bundle_frames = list(range(first, last+1))
+    graph, result, frame_symbols = preform_bundle_window(database, stereo_k, bundle_frames, [None]*(last-first+1))[3:]
     marginals = gtsam.Marginals(graph, result)  # 6.1.1
     # plot_trajectory(1, result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")  # 6.1.2
-    plt.show()
+    # plt.show()
     c0, ck = frame_symbols[-1], frame_symbols[0]
     pose_c0 = result.atPose3(c0)
     pose_ck = result.atPose3(ck)
@@ -1025,9 +1059,7 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     return pose_ck, ck, relative_marginal_covariance_mat
 
 
-
 def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph]:
-
     initial_poses = np.zeros((3450, 3))
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     x_start = gtsam.symbol('x', 0)
@@ -1045,9 +1077,7 @@ def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node]
     all_poses= [gtsam.Pose3()]
     jump = 19
     for i in range(0, 3450, jump):
-
         print(i)
-        # extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
         pose_ck, ck, relative_marginal_covariance_mat = extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
         R = pose_ck.rotation().matrix()
         t = pose_ck.translation()
@@ -1069,19 +1099,14 @@ def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node]
         curr_pose = relative_pose
         curr_symbol = ck
         curr_node = next_node
-        # x = mahalanobis_distance(relative_marginal_covariance_mat, relative_pose) / 1000000
-        # c= 1
 
-    # last_frame_pose = initialEstimate.atPose3(frame_symbols[0])
-    # print(last_frame_pose)
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
     result = optimizer.optimize()
     error_after = optimizer.error()
     print("total error before optimization: ", error_before)
     print("total error after optimization: ", error_after)
-    marginals = gtsam.Marginals(graph, result)
-
+    # marginals = gtsam.Marginals(graph, result)
     # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
     # plt.show()
     # plot_trajectory(1, result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")
@@ -1121,7 +1146,7 @@ def detect_possible_candidates(covariance: gtsam.noiseModel.Gaussian.Covariance,
     return mahalanobis_distance(covariance, relative_pose) < MAHALANOBIS_DISTANCE_TEST
 
 
-def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph):
+def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph, database: DataBase, stereo_k: gtsam.Cal3_S2Stereo):
     count = 0
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
@@ -1129,19 +1154,59 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
             rel_pos = all_poses[c_i_idx].inverse().between(all_poses[c_n_idx].inverse())
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos) / 1000000
             if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
-                print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
-                # if consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449)) >= 0.8:
-                    # print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+                # print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
+                inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
+                if inliers_percentage >= 0.8:
+                    relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
+                    print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+
+                    all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
+                    all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
+                    factor = gtsam.BetweenFactorPose3(curr_symbol, ck, curr_pose.between(relative_pose), covariance)
+                    graph.add(factor)
                 count += 1
                 # print("Mahalanobis distance:", mahalanobis_dist)
     print(count)
+def add():
+    pass
+
+def small_bundle(c_i_pose: gtsam.Pose3, c_n_pose: gtsam.Pose3, bundle_frames: List[int], database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, inliers_locs = None) -> Tuple[gtsam.Pose3, gtsam.noiseModel.Gaussian.Covariance]:
+    error_before, error_after, last_frame_pose, graph, result, frame_symbols = preform_bundle_window(database, stereo_k, bundle_frames, [c_i_pose, c_n_pose], inliers_locs)
+    ci, cn = frame_symbols[-1], frame_symbols[0]
+    c_i_new_pose = result.atPose3(ci)
+    c_n_new_pose = result.atPose3(cn)
+    marginals = gtsam.Marginals(graph, result)  # 6.1.1
+    keys = gtsam.KeyVector()
+    keys.append(ci)
+    keys.append(cn)
+    relative_pose = c_i_new_pose.between(c_n_new_pose)
+    relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
+    relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
+
+    relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat, False)
+    return relative_pose, relative_marginal_covariance_mat
 
 
-def consensus_matching(img_idx_1: int, img_idx_2: int) -> float:
+def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tuple[TrackInstance, TrackInstance]]]:
     k = read_cameras()[0]
     quad, max_num_inliers = ransac(img_idx_1, img_idx_2, k, None)
+    locs = []
+    for idx in quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx():
+        kp_idx = quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]
+        r_idx = quad.stereo_pair2.get_left_right_kps_idx_dict()[kp_idx]
+        kp_r_2 = quad.stereo_pair2.right_image.kps[r_idx]
+        kp_l_2 = quad.stereo_pair2.left_image.kps[kp_idx]
+
+
+        kp_l_1_idx = quad.left_left_kps_idx_dict[kp_idx]
+        kp_l_1 = quad.stereo_pair1.left_image.kps[kp_l_1_idx]
+        r_idx = quad.stereo_pair1.get_left_right_kps_idx_dict()[kp_l_1_idx]
+        kp_r_1 = quad.stereo_pair1.right_image.kps[r_idx]
+
+        locs.append( (TrackInstance(kp_l_2.pt[0], kp_r_2.pt[0], kp_l_2.pt[1]), TrackInstance(kp_l_1.pt[0], kp_r_1.pt[0], kp_l_1.pt[1])))
+
     # print(max_num_inliers)
-    return max_num_inliers / len(quad.get_left_left_kps_idx_dict())
+    return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs
 
 
 def read_and_detect_images(img_idx_1, img_idx_2):
@@ -1162,7 +1227,6 @@ if __name__ == '__main__':
     # ex5
     # reprojection_error2(database)
     # l = read_poses().T
-    # preform_bundle_window(database, stereo_k, 760, 779)
     # l2 = preform_bundle(database)
     # plot_trajectury(l2[0], l2[2], l[0], l[2])
     # plot_local_error(l, l2)  # ploting the distance error in meters
@@ -1171,7 +1235,7 @@ if __name__ == '__main__':
     # initial_poses = initial_poses.T
     # plot_initial_pose(initial_poses[0], initial_poses[2])
     all_poses, all_nodes, graph = create_pose_graph(database, stereo_k)
-    detect_loop_closure_candidates(all_poses, all_nodes, graph)
+    detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k)
     k=read_cameras()[0]
     # q, max_num = ransac(3439, 437, k, None)
 
