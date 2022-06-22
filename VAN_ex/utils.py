@@ -1,14 +1,19 @@
+from __future__ import annotations
 import heapq
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import numpy as np
 import gtsam
-class PriorityQueue:
+from numpy.typing import NDArray
 
+FloatNDArray = NDArray[np.float64]
+
+
+class PriorityQueue:
     def __init__(self):
         self.heap = []
         self.init = False
 
-    def push(self, item, priority, cov_sum):
+    def push(self, item: Node, priority: np.float, cov_sum: gtsam.noiseModel.Gaussian.Covariance) -> None:
         if not self.init:
             self.init = True
             try:
@@ -22,25 +27,22 @@ class PriorityQueue:
         pair = (priority, item, cov_sum)
         heapq.heappush(self.heap, pair)
 
-    def pop(self):
+    def pop(self) -> Tuple[Node, np.float, gtsam.noiseModel.Gaussian.Covariance]:
         (priority, item, cov_sum) = heapq.heappop(self.heap)
         return item, priority, cov_sum
 
-    def isEmpty(self):
+    def isEmpty(self) -> bool:
         return len(self.heap) == 0
 
 
 class Node:
 
-    def __init__(self, symbol, neighbors_cov_dict: Dict[Any, Any]):
+    def __init__(self, symbol: gtsam.symbol, neighbors_cov_dict: Dict[Node, gtsam.noiseModel.Gaussian.Covariance]):
         self.__symbol = symbol
         self.__neighbors_cov_dict = neighbors_cov_dict
 
-    def __eq__(self, other):
+    def __eq__(self, other: Node):
         return self.__symbol == other.__symbol
-
-    # def __lt__(self, other):
-    #     return self.__symbol < other.__symbol
 
     def __hash__(self):
         return hash(self.__symbol)
@@ -48,31 +50,30 @@ class Node:
     def __str__(self):
         return str(self.__symbol)
 
-    def add_neighbor(self, neighbor_node, relative_cov):
+    def add_neighbor(self, neighbor_node: Node, relative_cov: gtsam.noiseModel.Gaussian.Covariance) -> None:
         self.__neighbors_cov_dict[neighbor_node] = relative_cov
 
-    def get_symbol(self):
+    def get_edge_cov(self, neighbor_node: Node) -> gtsam.noiseModel.Gaussian.Covariance:
+        return self.__neighbors_cov_dict[neighbor_node]
+
+    def get_symbol(self) -> gtsam.symbol:
         return self.__symbol
 
-    def get_neighbors_cov_dict(self):
+    def get_neighbors_cov_dict(self) -> Dict[Node, gtsam.noiseModel.Gaussian.Covariance]:
         return self.__neighbors_cov_dict
 
-    def set_neighbors_cov_dict(self, d):
+    def set_neighbors_cov_dict(self, d: Dict[Node, gtsam.noiseModel.Gaussian.Covariance]) -> None:
         self.__neighbors_cov_dict = d
 
 
-def get_weight(current_node, neighbor):
-    # if {current_node.symbol, neighbor.symbol} == {5, 4}:
-    #     return 11
-    # if {current_node.symbol, neighbor.symbol} == {3, 4}:
-    #     return 10
-    return 3
+def get_weight(current_node, neighbor) -> np.float:
+    covariance = current_node.get_edge_cov(neighbor).covariance()
+    return np.linalg.det(covariance)
 
 
-def search(s_node: Node, t_node: Node):
+def search(s_node: Node, t_node: Node) -> Tuple[gtsam.noiseModel.Gaussian.Covariance, bool]:
     visited_nodes = set()
     min_heap = PriorityQueue()
-    # push(self, item, priority, cov_sum)
     min_heap.push(s_node, 0, None)
     while not min_heap.isEmpty():
         current_node, curr_priority, current_cov_sum = min_heap.pop()

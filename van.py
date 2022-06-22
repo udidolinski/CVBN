@@ -15,12 +15,12 @@ from gtsam.noiseModel import Gaussian
 from gtsam.utils.plot import plot_trajectory, plot_3d_points
 
 DEVIATION_THRESHOLD = 0.5
-# PNP_THRESHOLD = 0.5
 PNP_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
 MAHALANOBIS_DISTANCE_TEST = 0.15
 INLIERS_THRESHOLD = 100
+CONSENSUS_MATCHING_THRESHOLD = 0.6
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -1154,7 +1154,7 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     return pose_ck, ck, relative_marginal_covariance_mat
 
 
-def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph, gtsam.Values, List[gtsam.Pose3]]:
+def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph, gtsam.LevenbergMarquardtOptimizer, List[gtsam.Pose3]]:
     initial_poses = np.zeros((3450, 3))
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     x_start = gtsam.symbol('x', 0)
@@ -1211,7 +1211,7 @@ def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node]
 
     initial_poses = initial_poses.T
     plot_initial_pose(initial_poses[0], initial_poses[2])
-    return all_poses, all_nodes, graph, result, rel_poses
+    return all_poses, all_nodes, graph, optimizer, rel_poses
 
 
 def plot_initial_pose(x, z):
@@ -1243,7 +1243,7 @@ def detect_possible_candidates(covariance: gtsam.noiseModel.Gaussian.Covariance,
     return mahalanobis_distance(covariance, relative_pose) < MAHALANOBIS_DISTANCE_TEST
 
 
-def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph, database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, result: gtsam.Values, rel_poses):
+def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph, database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, optimizer: gtsam.LevenbergMarquardtOptimizer, rel_poses):
     count = 0
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
@@ -1253,15 +1253,15 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
             if c_n_idx-c_i_idx>=40 and mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
                 print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
                 inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
-                if inliers_percentage >= 0.7:
+                if inliers_percentage >= CONSENSUS_MATCHING_THRESHOLD:
                     # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
                     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
                     print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+
                     all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
                     all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
                     factor = gtsam.BetweenFactorPose3(gtsam.symbol('x', min(c_i_idx*19, 3449)), gtsam.symbol('x', min(c_n_idx*19, 3449)), relative_pose, covariance)
                     pose_graph.add(factor)
-                    optimizer = gtsam.LevenbergMarquardtOptimizer(pose_graph, result)
                     result = optimizer.optimize()
                     plot_new(result)
                     # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
@@ -1366,8 +1366,8 @@ if __name__ == '__main__':
     # ex6
     # initial_poses = initial_poses.T
     # plot_initial_pose(initial_poses[0], initial_poses[2])
-    all_poses, all_nodes, graph, result, rel_poses = create_pose_graph(database, stereo_k)
-    detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
+    all_poses, all_nodes, graph, optimizer, rel_poses = create_pose_graph(database, stereo_k)
+    detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
     k=read_cameras()[0]
     # q, max_num = ransac(3439, 437, k, None)
 
