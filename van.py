@@ -19,7 +19,7 @@ DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
-MAHALANOBIS_DISTANCE_TEST = 2
+MAHALANOBIS_DISTANCE_TEST = 0.15
 INLIERS_THRESHOLD = 100
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
@@ -1141,9 +1141,12 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     keys.append(c0)
     keys.append(ck)
     relative_pose = pose_c0.between(pose_ck)
+    # relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
+    # relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
     relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
-    relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
-
+    relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
+    relative_marginal_covariance_mat = relative_marginal_covariance_mat[6:, 6:]
+    relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
     relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat, False)
     np.set_printoptions(precision=5, suppress=True)
     # print("relative pose: \n", relative_pose)  # 6.1.3
@@ -1247,29 +1250,30 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
             cov, success = get_relative_covariance(all_nodes[c_n_idx], all_nodes[c_i_idx])
             rel_pos = all_poses[c_i_idx].inverse().between(all_poses[c_n_idx].inverse())
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos) / 1000000
-            if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
-                # print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
-                inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
-                if inliers_percentage >= 0.8:
-                    # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
-                    relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
-                    print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
-
-                    all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
-                    all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
-                    factor = gtsam.BetweenFactorPose3(gtsam.symbol('x', min(c_i_idx*19, 3449)), gtsam.symbol('x', min(c_n_idx*19, 3449)), relative_pose, covariance)
-                    pose_graph.add(factor)
-                    result = optimizer.optimize()
-                    plot_new(result)
+            if c_n_idx-c_i_idx>=40 and mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
+                print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
+                # inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
+                # if inliers_percentage >= 0.7:
+                #     # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
+                #     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
+                #     print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+                #
+                #     all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
+                #     all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
+                #     factor = gtsam.BetweenFactorPose3(gtsam.symbol('x', min(c_i_idx*19, 3449)), gtsam.symbol('x', min(c_n_idx*19, 3449)), relative_pose, covariance)
+                #     pose_graph.add(factor)
+                #     result = optimizer.optimize()
+                #     plot_new(result)
                     # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
                     # plt.show()
 
                 count += 1
                 # print("Mahalanobis distance:", mahalanobis_dist)
+    print(count)
     plot_new(result)
     plot_trajectory(1, result, scale=2, title="Locations as a 3D")
     plt.show()
-    print(count)
+
 
 
 def plot_new(result):
@@ -1303,8 +1307,12 @@ def small_bundle(c_i_pose: gtsam.Pose3, c_n_pose: gtsam.Pose3, bundle_frames: Li
     keys.append(ci)
     keys.append(cn)
     relative_pose = c_i_new_pose.between(c_n_new_pose)
+    # relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
+    # relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
     relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
-    relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
+    relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
+    relative_marginal_covariance_mat = relative_marginal_covariance_mat[6:, 6:]
+    relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
 
     relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat, False)
     return relative_pose, relative_marginal_covariance_mat
