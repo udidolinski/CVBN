@@ -1243,7 +1243,7 @@ def detect_possible_candidates(covariance: gtsam.noiseModel.Gaussian.Covariance,
     return mahalanobis_distance(covariance, relative_pose) < MAHALANOBIS_DISTANCE_TEST
 
 
-def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph, database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, optimizer: gtsam.LevenbergMarquardtOptimizer, rel_poses):
+def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List[Node], pose_graph: gtsam.NonlinearFactorGraph, database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, result: gtsam.Values, rel_poses):
     count = 0
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
@@ -1252,18 +1252,18 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos) / 1000000
             if c_n_idx-c_i_idx>=40 and mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
                 print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
-                # inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
-                # if inliers_percentage >= 0.7:
-                #     # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
-                #     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
-                #     print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
-                #
-                #     all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
-                #     all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
-                #     factor = gtsam.BetweenFactorPose3(gtsam.symbol('x', min(c_i_idx*19, 3449)), gtsam.symbol('x', min(c_n_idx*19, 3449)), relative_pose, covariance)
-                #     pose_graph.add(factor)
-                #     result = optimizer.optimize()
-                #     plot_new(result)
+                inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
+                if inliers_percentage >= 0.7:
+                    # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
+                    relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
+                    print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
+                    all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
+                    all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
+                    factor = gtsam.BetweenFactorPose3(gtsam.symbol('x', min(c_i_idx*19, 3449)), gtsam.symbol('x', min(c_n_idx*19, 3449)), relative_pose, covariance)
+                    pose_graph.add(factor)
+                    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, result)
+                    result = optimizer.optimize()
+                    plot_new(result)
                     # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
                     # plt.show()
 
