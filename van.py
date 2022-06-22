@@ -1275,19 +1275,11 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
     plt.show()
 
 
-
 def plot_new(result):
-    current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     locations = np.zeros((3450, 3))
     jump = 19
     for i in range(0, 3450, jump):
         locations[min(i+jump, 3449)] = result.atPose3(gtsam.symbol('x', i)).translation()
-        # last_frame_pose = result.atPose3(gtsam.symbol('x', i))
-        # R = last_frame_pose.rotation().matrix()
-        # t = last_frame_pose.translation()
-        # R_t = np.hstack((R, t[:,None]))
-        # current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
-        # locations[min(i+jump, 3449)] = current_transformation[:,3]
 
     l = read_poses().T
     l2 = locations.T
@@ -1296,6 +1288,7 @@ def plot_new(result):
 
 def add():
     pass
+
 
 def small_bundle(c_i_pose: gtsam.Pose3, c_n_pose: gtsam.Pose3, bundle_frames: List[int], database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, inliers_locs = None) -> Tuple[gtsam.Pose3, gtsam.noiseModel.Gaussian.Covariance]:
     error_before, error_after, last_frame_pose, graph, result, frame_symbols = new_bundle_window(database, stereo_k, bundle_frames, [c_i_pose, c_n_pose], inliers_locs)
@@ -1339,6 +1332,24 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
     # print(max_num_inliers)
     return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs
 
+
+def extract_relative_pose_new(c0: gtsam.symbol, ck: gtsam.symbol, graph: gtsam.NonlinearFactorGraph, result:gtsam.Values):  # q 6.1
+    marginals = gtsam.Marginals(graph, result)  # 6.1.1
+    pose_c0 = result.atPose3(c0)
+    pose_ck = result.atPose3(ck)
+    keys = gtsam.KeyVector()
+    keys.append(c0)
+    keys.append(ck)
+    relative_pose = pose_c0.between(pose_ck)
+    # relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
+    # relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
+    relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
+    relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
+    relative_marginal_covariance_mat = relative_marginal_covariance_mat[6:, 6:]
+    relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
+    relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat, False)
+    np.set_printoptions(precision=5, suppress=True)
+    return relative_marginal_covariance_mat
 
 
 def read_and_detect_images(img_idx_1, img_idx_2):
