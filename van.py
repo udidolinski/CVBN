@@ -18,7 +18,7 @@ DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 2
 RANSAC_NUM_SAMPLES = 4
 RANSAC_SUCCESS_PROB = 0.99
-MAHALANOBIS_DISTANCE_TEST = 0.15
+MAHALANOBIS_DISTANCE_TEST = 0.5
 INLIERS_THRESHOLD = 100
 CONSENSUS_MATCHING_THRESHOLD = 0.6
 
@@ -44,7 +44,7 @@ def show_key_points(idx: int, kps1: NDArray[KeyPoint], kps2: NDArray[KeyPoint]) 
 
 def detect_key_points(idx: int) -> Tuple[Image, Image]:
     img1_mat, img2_mat = read_images(idx, ImageColor.GRAY)
-    detector = cv2.SIFT_create()
+    detector = cv2.AKAZE_create()
     kps1, des1 = detector.detectAndCompute(img1_mat, None)
     kps2, des2 = detector.detectAndCompute(img2_mat, None)
     img1 = Image(img1_mat, np.array(kps1), des1)
@@ -54,7 +54,7 @@ def detect_key_points(idx: int) -> Tuple[Image, Image]:
 
 
 def match_key_points(img1: Image, img2: Image) -> NDArray[DMatch]:
-    brute_force = cv2.BFMatcher(cv2.NORM_L1, crossCheck=True)
+    brute_force = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = np.array(brute_force.match(img1.desc, img2.desc))
     # show_matches(img1, img2, matches)
     return matches
@@ -590,7 +590,7 @@ def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: N
         latest_tracks[track_index].frame_ids.append(right_frame_id)
 
 
-def create_database(start_frame_id: int, end_frame_id: int, start_track_id: int,
+def create_database(start_frame_id: int = 0, end_frame_id: int = 3449, start_track_id: int = 0,
                     tracks: Union[List[Track], None] = None, frames: Union[List[Frame], None] = None) -> DataBase:
     """
     This function creates a database of tracks.
@@ -1153,6 +1153,10 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     # print("the relative marginal covariance matrix: \n", relative_marginal_covariance_mat)  # 6.1.3
     return pose_ck, ck, relative_marginal_covariance_mat
 
+def update_database_pose(database:DataBase, current_trans_to_zero:FloatNDArray, index:int) -> None:
+    new_R, new_t = get_camera_to_global(current_trans_to_zero)
+    database.frames[index].set_transformation_from_zero(np.hstack((new_R, new_t)))
+
 
 def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph, gtsam.LevenbergMarquardtOptimizer, List[gtsam.Pose3]]:
     initial_poses = np.zeros((3450, 3))
@@ -1175,6 +1179,7 @@ def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node]
     for i in range(0, 3450, jump):
         print(i)
         pose_ck, ck, relative_marginal_covariance_mat = extract_relative_pose(database, stereo_k, i, min(i+jump, 3449))
+        update_database_pose(database, current_transformation, i)
         R = pose_ck.rotation().matrix()
         t = pose_ck.translation()
         R_t = np.hstack((R, t[:, None]))
@@ -1196,7 +1201,7 @@ def create_pose_graph(database, stereo_k) -> Tuple[List[gtsam.Pose3], List[Node]
         curr_pose = relative_pose
         curr_symbol = ck
         curr_node = next_node
-
+    update_database_pose(database, current_transformation, 3449)
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
     result = optimizer.optimize()
@@ -1234,7 +1239,7 @@ def get_relative_covariance(c_n: Node, c_i: Node):  # a
 
 def mahalanobis_distance(covariance: gtsam.noiseModel.Gaussian.Covariance, relative_pose: gtsam.Pose3):
     location = relative_pose.translation()
-    angles = relative_pose.rotation().xyz()
+    angles = relative_pose.rotation().ypr()
     relative_vec = np.hstack((angles, location))  # todo check if covariance need (angles, location) or (location, angles)
     return relative_vec.T @ covariance.information() @ relative_vec
 
@@ -1264,8 +1269,10 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                     pose_graph.add(factor)
                     result = optimizer.optimize()
                     plot_new(result)
-                    # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
-                    # plt.show()
+                    plot_trajectory(1, result, scale=2, title="Locations as a 3D")
+                    # plt.savefig(f"after_frames_{c_n_idx * 19}_{c_i_idx * 19}_traj_3d.png")
+                    # plt.clf()
+                    plt.show()
 
                 count += 1
                 # print("Mahalanobis distance:", mahalanobis_dist)
@@ -1379,9 +1386,10 @@ if __name__ == '__main__':
     # plot_initial_pose(initial_poses[0], initial_poses[2])
     all_poses, all_nodes, graph, optimizer, rel_poses = create_pose_graph(database, stereo_k)
     detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
-    k=read_cameras()[0]
+    # k=read_cameras()[0]
     # q, max_num = ransac(3439, 437, k, None)
-
+    # all_poses, all_nodes, graph, optimizer, rel_poses = create_pose_graph(database, stereo_k)
+    # detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
     # print(consensus_matching(3439, 437))
     a = 1
 
