@@ -1252,6 +1252,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
     adds new edge to the pose graph, and perform optimization.
     """
     count = 0
+    count_loop_closure_success = 0
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
             cov, success = get_relative_covariance(all_nodes[c_n_idx], all_nodes[c_i_idx])
@@ -1261,6 +1262,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                 print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
                 inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx*19, 3449), min(c_i_idx*19, 3449))
                 if inliers_percentage >= CONSENSUS_MATCHING_THRESHOLD:
+                    count_loop_closure_success+=1
                     # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
                     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
                     print(f"Frames {c_n_idx*19} and {c_i_idx*19} are a possible match!")
@@ -1279,6 +1281,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                 count += 1
                 # print("Mahalanobis distance:", mahalanobis_dist)
     print(count)
+    print(f"{count_loop_closure_success} successful loop closure detected")
     plot_trajectory_from_result(result)
     plot_trajectory(1, result, scale=2, title="Locations as a 3D")
     plt.savefig(f"after_frames_{c_n_idx * 19}_{c_i_idx * 19}_traj_3d.png")
@@ -1325,6 +1328,17 @@ def small_bundle(c_i_pose: gtsam.Pose3, c_n_pose: gtsam.Pose3, bundle_frames: Li
     return relative_pose, relative_marginal_covariance_mat
 
 
+def present_consensus_matching(img1_idx, img2_idx, good1, good2, all1, all2):
+    img1 = read_images(img1_idx, ImageColor.RGB)[0]
+    img2 = read_images(img2_idx, ImageColor.RGB)[1]
+    cv2.drawKeypoints(img1, all1, img1, (255, 255, 0))
+    cv2.drawKeypoints(img1, good1, img1, (0, 128, 255))
+
+    cv2.drawKeypoints(img2, all2, img2, (255, 255, 0)) # out cyan
+    cv2.drawKeypoints(img2, good2, img2, (0, 128, 255))
+    cv2.imwrite(f"{img1_idx}_.png", img1)
+    cv2.imwrite(f"{img2_idx}_.png", img2)
+
 def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tuple[TrackInstance, TrackInstance]]]:
     """
     This function perform consensus matching between img_idx_1 and img_idx_2.
@@ -1333,17 +1347,25 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
     k = read_cameras()[0]
     quad, max_num_inliers = ransac(img_idx_1, img_idx_2, k, None)
     locs = []
+    left_1_kp = []
+    left_2_kp = []
     for idx in quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx():
         kp_idx = quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]
         r_idx = quad.stereo_pair2.get_left_right_kps_idx_dict()[kp_idx]
         kp_r_2 = quad.stereo_pair2.right_image.kps[r_idx]
         kp_l_2 = quad.stereo_pair2.left_image.kps[kp_idx]
+        left_2_kp.append(kp_l_2)
 
         kp_l_1_idx = quad.left_left_kps_idx_dict[kp_idx]
         kp_l_1 = quad.stereo_pair1.left_image.kps[kp_l_1_idx]
         r_idx = quad.stereo_pair1.get_left_right_kps_idx_dict()[kp_l_1_idx]
         kp_r_1 = quad.stereo_pair1.right_image.kps[r_idx]
+        left_1_kp.append(kp_l_1)
+
         locs.append( (TrackInstance(kp_l_2.pt[0], kp_r_2.pt[0], kp_l_2.pt[1]), TrackInstance(kp_l_1.pt[0], kp_r_1.pt[0], kp_l_1.pt[1])))
+    if max_num_inliers / len(quad.get_left_left_kps_idx_dict()) >= CONSENSUS_MATCHING_THRESHOLD:
+        # draw_good_and_bad_matches(quad.stereo_pair1, str(quad.stereo_pair1.idx)+"l", str(quad.stereo_pair1.idx)+"r")
+        present_consensus_matching(img_idx_1, img_idx_2, np.array(left_1_kp), np.array(left_2_kp), quad.stereo_pair1.left_image.get_inliers_kps(FilterMethod.RECTIFICATION), quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.RECTIFICATION))
     return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs
 
 #
