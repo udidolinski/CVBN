@@ -6,13 +6,13 @@ from VAN_ex.utils import Node, search
 from image_utils import *
 import pickle
 import random
-from typing import Tuple, Iterator
+from typing import Tuple, Iterator, Iterable
 import os
 from gtsam import gtsam, utils
 from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
 # from gtsam.gtsam import BetweenFactorPose3
 from gtsam.noiseModel import Gaussian
-from gtsam.utils.plot import plot_trajectory, plot_3d_points
+from gtsam.utils.plot import plot_3d_points
 
 DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 2
@@ -1319,12 +1319,12 @@ def get_uncertainty_size(ci, cn, marginals):
 def plot_uncertanty_graph(marginals_before, marginals_after):
     uncer_before = []
     uncer_after = []
+    c0 = gtsam.symbol("x", 0)
     jump = 19
     for i in range(0, 3450, jump):
-        ci = gtsam.symbol("x", i)
         cn = gtsam.symbol("x", min(i+jump, 3449))
-        uncer_before.append(get_uncertainty_size(ci, cn, marginals_before))
-        uncer_after.append(get_uncertainty_size(ci, cn, marginals_after))
+        uncer_before.append(get_uncertainty_size(c0, cn, marginals_before))
+        uncer_after.append(get_uncertainty_size(c0, cn, marginals_after))
 
     plt.plot(uncer_before, label="before loop closure")
     plt.plot(uncer_after, label="after loop closure")
@@ -1415,8 +1415,8 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
     if max_num_inliers / len(quad.get_left_left_kps_idx_dict()) >= CONSENSUS_MATCHING_THRESHOLD:
         # draw_good_and_bad_matches(quad.stereo_pair1, str(quad.stereo_pair1.idx)+"l", str(quad.stereo_pair1.idx)+"r")
         present_consensus_matching(img_idx_1, img_idx_2, np.array(left_1_kp), np.array(left_2_kp),
-                                   quad.stereo_pair1.left_image.get_inliers_kps(FilterMethod.QUAD),
-                                   quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+                                   quad.stereo_pair1.left_image.get_inliers_kps(FilterMethod.RECTIFICATION),
+                                   quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.RECTIFICATION))
     return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs
 
 
@@ -1450,6 +1450,62 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
 #     img2 = Image(img2_mat, np.array(kps2), des2)
 #     return img1, img2
 
+
+def plot_trajectory(
+        fignum: int,
+        values: gtsam.Values,
+        scale: float = 1,
+        marginals: gtsam.Marginals = None,
+        title: str = "Plot Trajectory",
+        axis_labels: Iterable[str] = ("X axis", "Y axis", "Z axis"),
+) -> None:
+    """
+    Plot a complete 2D/3D trajectory using poses in `values`.
+
+    Args:
+        fignum: Integer representing the figure number to use for plotting.
+        values: Values containing some Pose2 and/or Pose3 values.
+        scale: Value to scale the poses by.
+        marginals: Marginalized probability values of the estimation.
+            Used to plot uncertainty bounds.
+        title: The title of the plot.
+        axis_labels (iterable[string]): List of axis labels to set.
+    """
+    fig = plt.figure(fignum)
+    axes = fig.gca(projection='3d')
+
+    axes.set_xlabel(axis_labels[0])
+    axes.set_ylabel(axis_labels[1])
+    axes.set_zlabel(axis_labels[2])
+    axes.view_init(azim=270, elev=0)
+
+    # Plot 2D poses, if any
+    poses = gtsam.utilities.allPose2s(values)
+    for key in poses.keys():
+        pose = poses.atPose2(key)
+        if marginals:
+            covariance = marginals.marginalCovariance(key)
+        else:
+            covariance = None
+
+        utils.plot.plot_pose2_on_axes(axes,
+                           pose,
+                           covariance=covariance,
+                           axis_length=scale)
+
+    # Then 3D poses, if any
+    poses = gtsam.utilities.allPose3s(values)
+    for key in poses.keys():
+        pose = poses.atPose3(key)
+        if marginals:
+            covariance = marginals.marginalCovariance(key)
+        else:
+            covariance = None
+
+        utils.plot.plot_pose3_on_axes(axes, pose, P=covariance, axis_length=scale)
+
+    fig.suptitle(title)
+    fig.canvas.set_window_title(title.lower())
 
 if __name__ == '__main__':
     database = open_database()
