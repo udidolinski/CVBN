@@ -86,19 +86,3 @@ def search(s_node: Node, t_node: Node) -> Tuple[gtsam.noiseModel.Gaussian.Covari
                 min_heap.push(neighbor, curr_priority+edge_weight, gtsam.noiseModel.Gaussian.Covariance(cov_sum))
         visited_nodes.add(current_node)
     return np.zeros((6, 6)), False
-
-# e = Node(1, {})
-# d = Node(2, {})
-# c.txt = Node(3, {})
-# b = Node(4, {})
-# a = Node(5, {})
-#
-# a.set_neighbors_cov_dict({c.txt: "c.txt", b: "b"})
-# b.set_neighbors_cov_dict({c.txt: "c.txt", a: "a", d: "d"})
-# c.txt.set_neighbors_cov_dict({b: "b", a: "a", d: "d"})
-# d.set_neighbors_cov_dict({c.txt: "c.txt", b: "b", e: "e"})
-# e.set_neighbors_cov_dict({d: "d"})
-#
-#
-# res = search(a, b)
-# print(res)

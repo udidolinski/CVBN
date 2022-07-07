@@ -2,7 +2,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-from VAN_ex.utils import Node, search
+from graph_utils import Node, search
 from image_utils import *
 import pickle
 import random
@@ -12,7 +12,7 @@ from gtsam import gtsam, utils
 from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
 # from gtsam.gtsam import BetweenFactorPose3
 from gtsam.noiseModel import Gaussian
-from gtsam.utils.plot import plot_3d_points
+from gtsam.utils import plot
 
 DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 2
@@ -1271,7 +1271,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                     # relative_pose, covariance = small_bundle(all_poses[c_i_idx], all_poses[c_n_idx], [min(c_i_idx*19, 3449), min(c_n_idx*19, 3449)], database, stereo_k, inliers_locs)
                     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx * 19, 3449), min(c_n_idx * 19, 3449)],
                                                              database, stereo_k, inliers_locs)
-                    print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a possible match!")
+                    # print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a possible match!")
 
                     all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
                     all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
@@ -1325,9 +1325,9 @@ def plot_uncertanty_graph(marginals_before, marginals_after):
         cn = gtsam.symbol("x", min(i+jump, 3449))
         uncer_before.append(get_uncertainty_size(c0, cn, marginals_before))
         uncer_after.append(get_uncertainty_size(c0, cn, marginals_after))
-
-    plt.plot(uncer_before, label="before loop closure")
-    plt.plot(uncer_after, label="after loop closure")
+    x = np.arange(len(uncer_before)) * jump
+    plt.plot(x, uncer_before, label="before loop closure")
+    plt.plot(x, uncer_after, label="after loop closure")
     plt.legend()
     plt.xlabel('frame')
     plt.ylabel('uncertainty')
@@ -1420,45 +1420,10 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
     return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs
 
 
-#
-# def extract_relative_pose_new(c0: gtsam.symbol, ck: gtsam.symbol, graph: gtsam.NonlinearFactorGraph, result:gtsam.Values):  # q 6.1
-#     marginals = gtsam.Marginals(graph, result)  # 6.1.1
-#     pose_c0 = result.atPose3(c0)
-#     pose_ck = result.atPose3(ck)
-#     keys = gtsam.KeyVector()
-#     keys.append(c0)
-#     keys.append(ck)
-#     relative_pose = pose_c0.between(pose_ck)
-#     # relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
-#     # relative_marginal_covariance_mat = relative_marginal_covariance_mat[:6, 6:]
-#     relative_marginal_covariance_mat = marginals.jointMarginalCovariance(keys).fullMatrix()
-#     relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
-#     relative_marginal_covariance_mat = relative_marginal_covariance_mat[6:, 6:]
-#     relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
-#     relative_marginal_covariance_mat = gtsam.noiseModel.Gaussian.Covariance(relative_marginal_covariance_mat, False)
-#     np.set_printoptions(precision=5, suppress=True)
-#     return relative_marginal_covariance_mat
 
 
-# def read_and_detect_images(img_idx_1, img_idx_2):
-#     img1_mat = read_images(img_idx_1, ImageColor.GRAY)[0]
-#     img2_mat = read_images(img_idx_2, ImageColor.GRAY)[0]
-#     detector = cv2.SIFT_create()
-#     kps1, des1 = detector.detectAndCompute(img1_mat, None)
-#     kps2, des2 = detector.detectAndCompute(img2_mat, None)
-#     img1 = Image(img1_mat, np.array(kps1), des1)
-#     img2 = Image(img2_mat, np.array(kps2), des2)
-#     return img1, img2
-
-
-def plot_trajectory(
-        fignum: int,
-        values: gtsam.Values,
-        scale: float = 1,
-        marginals: gtsam.Marginals = None,
-        title: str = "Plot Trajectory",
-        axis_labels: Iterable[str] = ("X axis", "Y axis", "Z axis"),
-) -> None:
+def plot_trajectory(fignum: int, values: gtsam.Values, scale: float = 1, marginals: gtsam.Marginals = None,
+                    title: str = "Plot Trajectory", axis_labels: Iterable[str] = ("X axis", "Y axis", "Z axis")) -> None:
     """
     Plot a complete 2D/3D trajectory using poses in `values`.
 
@@ -1488,7 +1453,7 @@ def plot_trajectory(
         else:
             covariance = None
 
-        utils.plot.plot_pose2_on_axes(axes,
+        plot.plot_pose2_on_axes(axes,
                            pose,
                            covariance=covariance,
                            axis_length=scale)
@@ -1502,12 +1467,14 @@ def plot_trajectory(
         else:
             covariance = None
 
-        utils.plot.plot_pose3_on_axes(axes, pose, P=covariance, axis_length=scale)
+        plot.plot_pose3_on_axes(axes, pose, P=covariance, axis_length=scale)
 
     fig.suptitle(title)
     fig.canvas.set_window_title(title.lower())
 
 if __name__ == '__main__':
+    #plot.plot_pose3_on_axes()
+
     database = open_database()
     # save_database(database)
     stereo_k = get_stereo_k()
