@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 from initial_estimate import *
 
 def create_quads(start_frame_id: int, end_frame_id: int) -> Iterator[Quad]:
@@ -275,7 +277,8 @@ def plot_reprojection_compared_to_factor_error(x_reprojection: List[float], y_fa
     plt.xlabel('reprojection error')
     plt.ylabel('factor error')
     plt.title("factor error as a function of reprojection error")
-    plt.show()
+    plt.savefig("factor_to_reproj_error.png")
+    plt.clf()
 
 
 def present_statistics(database: DataBase) -> None:
