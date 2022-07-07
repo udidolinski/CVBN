@@ -15,34 +15,7 @@ def get_stereo_k() -> gtsam.Cal3_S2Stereo:
     return stereo_k
 
 
-def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]:
-    """
-    This function convert given transformation: global->camera to camera->global.
-    """
-    R = R_t[:, :3]
-    t = R_t[:, 3]
-    new_R = R.T
-    new_t = - new_R @ t
-    return new_R, new_t[:, None]
-
-
-def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans) -> Tuple[gtsam.StereoCamera, gtsam.Pose3]:
-    """
-    This function create and return stereo camera for a given frame.
-    """
-    curr_frame = database.frames[frame_idx]
-    new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
-
-    i_to_zero_trans = np.hstack((new_R, new_t))
-    i_to_start_trans = compute_extrinsic_matrix(i_to_zero_trans, start_frame_trans)
-    new_R = i_to_start_trans[:, :3]
-    new_t = i_to_start_trans[:, 3]
-
-    frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
-    return gtsam.StereoCamera(frame_pose, stereo_k), frame_pose
-
-
-def reprojection_error(database: DataBase):
+def reprojection_error(database: DataBase) -> None:
     """
     This function calculate the reprojection error of all tracks in database.
     """
@@ -91,6 +64,53 @@ def reprojection_error(database: DataBase):
     plot_projection_error('reprojection error', left_error, right_error)
     plot_projection_error('factor error', factor_errors)
     plot_reprojection_compared_to_factor_error(left_error, factor_errors)
+    plt.clf()
+
+
+def find_end_keyframe(database: DataBase, frame_id: int) -> int:
+    """
+    This function finds the end keyframe given a start keyframe index
+    :param database: database
+    :param frame_id: start keyframe index
+    :return: end keyframe index
+    """
+    from collections import Counter
+    max_frame_counter = Counter()
+    for track_id in database.frames[frame_id].track_ids:
+        curr_max_frame_id = database.tracks[track_id].frame_ids[-1]
+        # if curr_max_frame_id-frame_id >= 19:
+        #     return frame_id+19
+        max_frame_counter[min(curr_max_frame_id, frame_id + 19)] += 1
+    threshold = 20
+    max_frame_set = {key for key, value in max_frame_counter.items() if value >= threshold}
+    return max(max_frame_set)
+
+
+def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]:
+    """
+    This function convert given transformation: global->camera to camera->global.
+    """
+    R = R_t[:, :3]
+    t = R_t[:, 3]
+    new_R = R.T
+    new_t = - new_R @ t
+    return new_R, new_t[:, None]
+
+
+def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans) -> Tuple[gtsam.StereoCamera, gtsam.Pose3]:
+    """
+    This function create and return stereo camera for a given frame.
+    """
+    curr_frame = database.frames[frame_idx]
+    new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
+
+    i_to_zero_trans = np.hstack((new_R, new_t))
+    i_to_start_trans = compute_extrinsic_matrix(i_to_zero_trans, start_frame_trans)
+    new_R = i_to_start_trans[:, :3]
+    new_t = i_to_start_trans[:, 3]
+
+    frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+    return gtsam.StereoCamera(frame_pose, stereo_k), frame_pose
 
 
 def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bundle_frames: List[int]) -> Tuple[
@@ -162,30 +182,7 @@ def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bun
     return error_before, error_after, last_frame_pose, graph, result, frame_symbols
 
 
-
-def display_quad_feature(frames_idx: List[int], locations: Tuple[TrackInstance, TrackInstance], loc_ids: int) -> None:
-    """
-    This function display a random track of length > 9.
-    :param database:
-    """
-    for i, frame in enumerate(frames_idx):
-        track_instance = locations[i]
-        img1, img2 = read_images(frame, ImageColor.RGB)
-        kp1 = cv2.KeyPoint(track_instance.x_l, track_instance.y, 5)
-        cv2.drawKeypoints(img1, [kp1], img1, (0, 0, 255), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
-        kp2 = cv2.KeyPoint(track_instance.x_r, track_instance.y, 5)
-        cv2.drawKeypoints(img2, [kp2], img2, (0, 0, 255), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
-        res = np.empty((100, 200, 3), dtype=np.uint8)
-        x1_l, x2_l, y1_l, y2_l = result_image_size(img1.shape, int(track_instance.x_l), int(track_instance.y))
-        x1_r, x2_r, y1_r, y2_r = result_image_size(img2.shape, int(track_instance.x_r), int(track_instance.y))
-        res[:, :100] = img1[y1_l:y2_l, x1_l:x2_l]
-        res[:, 100:] = img2[y1_r:y2_r, x1_r:x2_r]
-        # cv2.imshow(f"{frame}", res)
-        cv2.imwrite(f"display_quad_feature/Output_Image_{frame}_{loc_ids}.png", res)
-    # cv2.waitKey(0)
-
-
-def perform_bundle(database: DataBase):
+def perform_bundle(database: DataBase) -> FloatNDArray:
     """
     This function perform bundle adjustment optimization on database.
     """
@@ -205,20 +202,13 @@ def perform_bundle(database: DataBase):
     return locations.T
 
 
-def find_end_keyframe(database: DataBase, frame_id: int):
-    from collections import Counter
-    max_frame_counter = Counter()
-    for track_id in database.frames[frame_id].track_ids:
-        curr_max_frame_id = database.tracks[track_id].frame_ids[-1]
-        # if curr_max_frame_id-frame_id >= 19:
-        #     return frame_id+19
-        max_frame_counter[min(curr_max_frame_id, frame_id + 19)] += 1
-    threshold = 20
-    max_frame_set = {key for key, value in max_frame_counter.items() if value >= threshold}
-    return max(max_frame_set)
-
-
-def plot_local_error(real_locs, est_locs, title):
+def plot_local_error(real_locs: FloatNDArray, est_locs: FloatNDArray, title: str = "local_error") -> None:
+    """
+    This function plot the local error (the norm between the ground truth and the estimate).
+    :param real_locs: ground truth locations.
+    :param est_locs: estimated locations.
+    :param title: wanted plot title
+    """
     jump = 19
     res = []
     dist_error = (real_locs - est_locs) ** 2
@@ -230,3 +220,12 @@ def plot_local_error(real_locs, est_locs, title):
     plt.title(title)
     plt.savefig(f"{title}.png")
     plt.clf()
+
+
+# ex5
+database = open_database()
+reprojection_error(database)
+l = read_poses().T
+l2 = perform_bundle(database)
+plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
+plot_local_error(l, l2)  # ploting the distance error in meters

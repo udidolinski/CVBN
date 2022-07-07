@@ -1,7 +1,8 @@
 from bundle_adjustment import *
 from gtsam import gtsam, utils
 
-def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first, last):  # q 6.1
+
+def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first: int, last: int) -> Tuple[gtsam.Pose3, gtsam.symbol, gtsam.noiseModel.Gaussian]:  # q 6.1
     """
     This function extract the relative pose and the relative marginal covariance matrix between the frames first and last.
     """
@@ -37,7 +38,7 @@ def update_database_pose(database: DataBase, current_trans_to_zero: FloatNDArray
 
 
 def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple[
-    List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph, gtsam.LevenbergMarquardtOptimizer, List[gtsam.Pose3], FloatNDArray]:
+    List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph, gtsam.LevenbergMarquardtOptimizer, List[gtsam.Pose3], FloatNDArray, gtsam.Values]:
     """
     This function create a pose graph and perform bundle adjustment optimization of that graph.
     """
@@ -101,10 +102,8 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
     return all_poses, all_nodes, graph, optimizer, rel_poses, initial_poses, result
 
 
-def plot_initial_pose(x, z):
+def plot_initial_pose(x, z) -> None:
     plt.scatter(x, z, c='blue', s=2)
-    # plt.xlabel("z")
-    # plt.ylabel("y")
-    plt.title("trajecory of initial poses")
+    plt.title("trajectory of initial poses")
     plt.savefig("traj_initial.png")
     plt.clf()
