@@ -119,11 +119,11 @@ def extend_database(database: DataBase, end_frame_id: int) -> DataBase:
     return new_database
 
 
-def save_database(database: DataBase) -> None:
+def save_database(database: DataBase, name: str="database.db") -> None:
     """
     This function save the database to a file.
     """
-    with open("database.db", "wb") as file:
+    with open(name, "wb") as file:
         pickle.dump(database, file)
 
 

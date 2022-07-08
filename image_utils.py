@@ -183,6 +183,7 @@ class Frame:
         self.track_ids = []
         self.inliers_percentage = 0
         self.transformation_from_zero = np.zeros(1)
+        self.transformation_from_after_bundle = np.zeros(1)
 
     def get_inliers_percentage(self) -> float:
         return self.inliers_percentage
@@ -193,8 +194,14 @@ class Frame:
     def set_transformation_from_zero(self, transformation_from_zero: FloatNDArray) -> None:
         self.transformation_from_zero = transformation_from_zero
 
+    def set_transformation_from_zero_after_bundle(self, transformation_from_zero_bundle: FloatNDArray) -> None:
+        self.transformation_from_after_bundle = transformation_from_zero_bundle
+
     def get_transformation_from_zero(self) -> FloatNDArray:
         return self.transformation_from_zero
+
+    def get_transformation_from_zero_bundle(self) -> FloatNDArray:
+        return self.transformation_from_after_bundle
 
 
 class DataBase:
