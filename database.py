@@ -1,58 +1,87 @@
-import matplotlib.pyplot as plt
-
 from initial_estimate import *
+from typing import Iterator
+import pickle
+import random
+from tqdm import tqdm
+
 
 def create_quads(start_frame_id: int, end_frame_id: int) -> Iterator[Quad]:
+    """
+    This function is a generator fro creating the Quad's objects
+    :param start_frame_id: the frame id to the first quad that will be created (first quad includes the frames start_frame_id and start_frame_id+1)
+    :param end_frame_id: the frame id to the last id that will be created (last quad includes the frames end_frame_id-1 and end_frame_id)
+    :return:
+    """
     k = read_cameras()[0]
     curr_stereo_pair2 = None
     for i in range(start_frame_id, end_frame_id):
-        print(i)
+        # print(i)
         current_quad = ransac(i, i + 1, k, curr_stereo_pair2)[0]
         yield current_quad
         curr_stereo_pair2 = current_quad.stereo_pair2
 
 
 def gen_track_id(index: int) -> Iterator[int]:
+    """
+    This is generator for creating track id's
+    :param index: which track id to start from (in case we extend the database we want to start generating id's from where we stopped before)
+    :return:
+    """
     while True:
         yield index
         index += 1
 
 
-def get_idx_in_kp_left_image_pair2(quad: Quad, idx: int) -> int:
-    return quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]
-
-
 def get_left_image_pair1_kps_idx(quad: Quad, idx: int) -> int:
-    return quad.left_left_kps_idx_dict[quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]]
+    """
+    This function is for getting
+    the key point index in the left image of pair 1 from
+    the key point index in the left image of pair 2 that were matched.
+    left image pair 2 -> left image pair 1
+    :param quad:
+    :param idx:
+    :return:
+    """
+    return quad.left_left_kps_idx_dict[idx]
 
 
 def get_right_image_pair_kps_idx(pair: StereoPair, pair1_left_img_kp_idx: int) -> int:
+    """
+    This function is for getting
+    the key point index in the right image of a stereo pair
+    the key point index in the left image of the same stereo pair
+    left image -> right image
+    :param pair:
+    :param pair1_left_img_kp_idx:
+    :return:
+    """
     return pair.get_left_right_kps_idx_dict()[pair1_left_img_kp_idx]
 
 
-def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: NDArray[np.int64], quad: Quad,
-                 track_id_gen: Iterator[int]) -> None:
+def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: NDArray[np.int64], quad: Quad, track_id_gen: Iterator[int]) -> None:
     """
     This function create new track or continuing a track.
     :param latest_tracks: all tracks that created.
     :param frames: all frames that created.
-    :param inliers_idx: the inliers of the left frame in pair1 of quad.
+    :param inliers_idx: the inliers of the left frame in pair2 of quad.
     :param quad:
     :param track_id_gen:
     """
-    new_kps = {get_left_image_pair1_kps_idx(quad, idx) for idx in inliers_idx}
+    pair1_left_img_kp_idx = {get_left_image_pair1_kps_idx(quad, idx) for idx in inliers_idx}
     kp_to_track_dict = {latest_tracks[track_id].last_kp_idx: track_id for track_id in frames[-2].track_ids}
-    kp_to_track_dict = {kp_idx: kp_to_track_dict[kp_idx] for kp_idx in new_kps if kp_idx in kp_to_track_dict}
+    kp_to_track_dict = {kp_idx: kp_to_track_dict[kp_idx] for kp_idx in pair1_left_img_kp_idx if kp_idx in kp_to_track_dict}
     for idx in inliers_idx:
         track_index = -1
         if get_left_image_pair1_kps_idx(quad, idx) in kp_to_track_dict:
+            # This case the track already exists from 2nd to last frame (frames[-2])
             track_id = kp_to_track_dict[get_left_image_pair1_kps_idx(quad, idx)]
             track_index = kp_to_track_dict[get_left_image_pair1_kps_idx(quad, idx)]
         else:
+            # This case we need to create a new track
             frame_id = quad.stereo_pair1.idx
             track_id = next(track_id_gen)
             frames[frame_id].track_ids.append(track_id)
-            new_track = Track(track_id, get_idx_in_kp_left_image_pair2(quad, idx), quad.stereo_pair1.idx)
+            new_track = Track(track_id, idx, quad.stereo_pair1.idx)
             latest_tracks.append(new_track)
             pair1_left_img_kp_idx = get_left_image_pair1_kps_idx(quad, idx)
             pair1_right_img_kp_idx = get_right_image_pair_kps_idx(quad.stereo_pair1, pair1_left_img_kp_idx)
@@ -65,14 +94,13 @@ def create_track(latest_tracks: List[Track], frames: List[Frame], inliers_idx: N
 
         right_frame_id = quad.stereo_pair2.idx
         frames[right_frame_id].track_ids.append(track_id)
-        kp_l = quad.stereo_pair2.left_image.kps[get_idx_in_kp_left_image_pair2(quad, idx)]
+        kp_l = quad.stereo_pair2.left_image.kps[idx]
         right_x_l = kp_l.pt[0]
-        right_x_r = quad.stereo_pair2.right_image.kps[
-            get_right_image_pair_kps_idx(quad.stereo_pair2, get_idx_in_kp_left_image_pair2(quad, idx))].pt[0]
+        right_x_r = quad.stereo_pair2.right_image.kps[get_right_image_pair_kps_idx(quad.stereo_pair2, idx)].pt[0]
         right_y = kp_l.pt[1]
 
         latest_tracks[track_index].set_last_pair_id(right_frame_id)
-        latest_tracks[track_index].set_last_kp_idx(get_idx_in_kp_left_image_pair2(quad, idx))
+        latest_tracks[track_index].set_last_kp_idx(idx)
         latest_tracks[track_index].track_instances.append(TrackInstance(right_x_l, right_x_r, right_y))
         latest_tracks[track_index].frame_ids.append(right_frame_id)
 
@@ -95,7 +123,7 @@ def create_database(start_frame_id: int = 0, end_frame_id: int = 3449, start_tra
         frames = [Frame(start_frame_id)]
         frames[-1].set_transformation_from_zero(np.hstack((np.eye(3), np.zeros((3, 1)))))
     gen = gen_track_id(start_track_id)
-    for i, quad in enumerate(create_quads(start_frame_id, end_frame_id)):
+    for i, quad in tqdm(enumerate(create_quads(start_frame_id, end_frame_id)), desc="Creating DataBase", total=end_frame_id - start_frame_id + 1):
         current_transformation = frames[-1].get_transformation_from_zero()
         percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
         frames[-1].set_inliers_percentage(round(percentage, 2))
@@ -106,6 +134,7 @@ def create_database(start_frame_id: int = 0, end_frame_id: int = 3449, start_tra
         create_track(tracks, frames, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen)
     percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
     frames[-1].set_inliers_percentage(round(percentage, 2))
+    # print(frames[-2].get_transformation_from_zero())
     return DataBase(tracks, frames)
 
 
@@ -119,11 +148,11 @@ def extend_database(database: DataBase, end_frame_id: int) -> DataBase:
     return new_database
 
 
-def save_database(database: DataBase, name: str="database.db") -> None:
+def save_database(database: DataBase, name: str = "database") -> None:
     """
     This function save the database to a file.
     """
-    with open(name, "wb") as file:
+    with open(f"{name}.db", "wb") as file:
         pickle.dump(database, file)
 
 
@@ -201,6 +230,13 @@ def display_track(database: DataBase, random_track: Track = None) -> None:
 
 
 def read_camera_matrices(first_index: int = 0, last_index: int = 3450) -> Iterator[FloatNDArray]:
+    """
+    This function is a generator for creating the true transformation matrices of the cameras
+    (that transforms from the first camera to the the current camera)
+    :param first_index:
+    :param last_index:
+    :return:
+    """
     with open(os.path.join(POSES_PATH, '00.txt')) as f:
         for l in f.readlines()[first_index:last_index]:
             l = l.split()
@@ -210,6 +246,12 @@ def read_camera_matrices(first_index: int = 0, last_index: int = 3450) -> Iterat
 
 
 def calculate_norm(a: FloatNDArray, b: FloatNDArray) -> Union[float, FloatNDArray]:
+    """
+    This functions calculates the L2 norm between 2 vectors (numpy arrays)
+    :param a:
+    :param b:
+    :return:
+    """
     return np.linalg.norm(a - b)
 
 
@@ -242,14 +284,11 @@ def reprojection(database: DataBase) -> None:
     P = k @ m1
     Q = k @ m2
     track_location = random_track.track_instances[-1]
-    cv_p4d = cv2.triangulatePoints(P, Q, (track_location.x_l, track_location.y),
-                                   (track_location.x_r, track_location.y)).squeeze()
+    cv_p4d = cv2.triangulatePoints(P, Q, (track_location.x_l, track_location.y), (track_location.x_r, track_location.y)).squeeze()
     cv_p3d = cv_p4d[:3] / cv_p4d[3]
-    cv_p3d2 = transform_rt_to_location(
-        next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1] + 1)), cv_p3d)
+    cv_p3d2 = transform_rt_to_location(next(read_camera_matrices(random_track.frame_ids[-1], random_track.frame_ids[-1] + 1)), cv_p3d)
     p4d = np.hstack((cv_p3d2, 1))[:, None]
-    for i, extrinsic_matrix in enumerate(
-            read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1] + 1)):
+    for i, extrinsic_matrix in enumerate(read_camera_matrices(random_track.frame_ids[0], random_track.frame_ids[-1] + 1)):
         location = random_track.track_instances[i]
         left_error.append(point_reprojection_error(extrinsic_matrix, k, p4d, [location.x_l, location.y]))
 
@@ -260,6 +299,13 @@ def reprojection(database: DataBase) -> None:
 
 
 def plot_projection_error(title: str, left_error: List[float], right_error: List[float] = None) -> None:
+    """
+    This functions plots the reprojection error of the left images and the right images (or only the left images)
+    :param title:
+    :param left_error:
+    :param right_error:
+    :return:
+    """
     plt.plot(left_error, label="left error")
     if right_error:
         plt.plot(right_error, label="right error")
@@ -273,6 +319,12 @@ def plot_projection_error(title: str, left_error: List[float], right_error: List
 
 
 def plot_reprojection_compared_to_factor_error(x_reprojection: List[float], y_factor: List[float]) -> None:
+    """
+    This function plots the reprojection error compared to the factor error
+    :param x_reprojection:
+    :param y_factor:
+    :return:
+    """
     plt.plot(x_reprojection, y_factor)
     plt.xlabel('reprojection error')
     plt.ylabel('factor error')
@@ -282,6 +334,11 @@ def plot_reprojection_compared_to_factor_error(x_reprojection: List[float], y_fa
 
 
 def present_statistics(database: DataBase) -> None:
+    """
+    This function presents statistics about the database as shown below
+    :param database:
+    :return:
+    """
     print("num_of_tracks: ", database.get_num_of_tracks())
     print("num_of_frames: ", database.get_num_of_frames())
     print("mean track length: ", database.get_mean_track_length())
@@ -293,3 +350,8 @@ def present_statistics(database: DataBase) -> None:
     database.inliers_percentage_graph()
     database.create_track_length_histogram_graph()
     reprojection(database)
+
+
+if __name__ == '__main__':
+    database = create_database()
+    save_database(database)
