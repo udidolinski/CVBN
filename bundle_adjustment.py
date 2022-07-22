@@ -1,8 +1,16 @@
+import numpy as np
+
+import pose_graph
 from database import *
 from gtsam import gtsam, utils
 from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
 # from gtsam.gtsam import BetweenFactorPose3
 from gtsam.noiseModel import Gaussian
+
+
+from collections import defaultdict
+def default_dict_struct(): return defaultdict(list_struct)
+def list_struct(): return [int(), int()]
 
 
 def get_stereo_k() -> gtsam.Cal3_S2Stereo:
@@ -15,9 +23,137 @@ def get_stereo_k() -> gtsam.Cal3_S2Stereo:
     return stereo_k
 
 
+def get_pnp_locations(database:DataBase) -> FloatNDArray:
+    """
+    This function returns all location after PnP estimation from the database.
+    """
+    locations = np.zeros((3450, 3))
+    for i in range(3450):
+        locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero())
+    return locations.T
+
+
+def get_pnp_extrinsic_mat(database:DataBase) -> List[gtsam.Pose3]:
+    """
+    This function create and returns all extrinsic matrices after PnP estimation from the database.
+    """
+    extrinsic_matrix_arr = []
+    for i in range(3450):
+        new_R, new_t = get_camera_to_global(database.frames[i].get_transformation_from_zero())
+        i_to_zero_trans = np.hstack((new_R, new_t))
+        new_R = i_to_zero_trans[:, :3]
+        new_t = i_to_zero_trans[:, 3]
+        frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+        extrinsic_matrix_arr.append(frame_pose)
+    return extrinsic_matrix_arr
+
+
+def read_ground_truth_extrinsic_mat(first_index: int = 0, last_index: int = 3450) -> List[gtsam.Pose3]:
+    """
+    This function create and returns all extrinsic matrices of ground truth.
+    """
+    extrinsic_matrix_arr = []
+    i = 0
+    with open(os.path.join(POSES_PATH, '00.txt')) as f:
+        for l in f.readlines()[first_index:last_index]:
+            l = l.split()
+            extrinsic_matrix = np.array([float(i) for i in l])
+            extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
+
+            new_R, new_t = get_camera_to_global(extrinsic_matrix)
+            i_to_zero_trans = np.hstack((new_R, new_t))
+            new_R = i_to_zero_trans[:, :3]
+            new_t = i_to_zero_trans[:, 3]
+            frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+            extrinsic_matrix_arr.append(frame_pose)
+            i += 1
+    return extrinsic_matrix_arr
+
+
+def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations: FloatNDArray, real_ext_mat: List[gtsam.Pose3], estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450, jump:int = 1, estimation_type:str="PnP"):
+    """
+    This function plot the absolute estimation error in X, Y, Z axis, the total error norm and the angle error.
+    """
+    sq_dist_error = (real_locations - estimated_locations) ** 2
+    norm = np.sqrt(sq_dist_error[0] + sq_dist_error[1] + sq_dist_error[2])
+    x_error = np.sqrt(sq_dist_error[0])
+    y_error = np.sqrt(sq_dist_error[1])
+    z_error = np.sqrt(sq_dist_error[2])
+    angle_error = np.zeros((num_of_cameras, 3))
+
+    # angle error
+    for i in range(num_of_cameras, jump):
+        pnp_angles = estimated_ext_mat[i].rotation().ypr()
+        real_angles = real_ext_mat[i].rotation().ypr()
+        angle_error[i] = real_angles-pnp_angles
+    angle_error = (angle_error.T) ** 2
+    angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+
+    plt.figure(figsize=(15, 5))
+    plt.plot(norm, label="norm")
+    plt.plot(x_error, label="x error")
+    plt.plot(y_error, label="y error")
+    plt.plot(z_error, label="z error")
+    plt.plot(angle_error, label="angle error")
+    plt.legend()
+    plt.title(f"Absolute {estimation_type} estimation error")
+    plt.savefig("absolute_pnp_estimation_error.png")
+    plt.clf()
+
+
+def calc_error(location: TrackInstance, camera: gtsam.Cal3_S2Stereo, point_3d) -> float:
+    """
+    This function project a given point and return the error norm.
+    """
+    projected_p = camera.project(point_3d)
+    left_pt = np.array([projected_p.uL(), projected_p.v()])
+    left_location = np.array([location.x_l, location.y])
+    return calculate_norm(left_pt, left_location)
+
+
+def projection_error_pnp_vs_bundle(start_frame_idx: int, end_frame_idx: int, database: DataBase) -> None:
+    """
+    This function plot the mean projection error of the different track links as a function of distance from the
+    reference frame, for all tracks in frame: start_frame_idx.
+    for PnP and bundle estimation.
+    """
+    pnp_left_error, bundle_left_error = default_dict_struct(), default_dict_struct()  # track_len: [error, track_count]
+    stereo_k = get_stereo_k()
+    for track_id in database.frames[start_frame_idx].track_ids:
+        track = database.tracks[track_id]
+        end_frame_trans_pnp = database.frames[track.frame_ids[-1]].transformation_from_zero
+        end_frame_trans_bundle = database.frames[track.frame_ids[-1]].get_transformation_from_zero_bundle()
+        pnp_start_frame_stereo_camera = create_stereo_camera(database, track.frame_ids[0], stereo_k, end_frame_trans_pnp)[0]
+        bundle_start_frame_stereo_camera = create_stereo_camera(database, track.frame_ids[0], stereo_k, end_frame_trans_bundle)[0]
+        point_3d_pnp = pnp_start_frame_stereo_camera.backproject(gtsam.StereoPoint2(*track.track_instances[0]))
+        point_3d_bundle = bundle_start_frame_stereo_camera.backproject(gtsam.StereoPoint2(*track.track_instances[0]))
+
+        for i, frame_idx in enumerate(track.frame_ids):
+            pnp_camera = create_stereo_camera(database, frame_idx, stereo_k, end_frame_trans_pnp)[0]
+            bundle_camera = create_stereo_camera(database, frame_idx, stereo_k, end_frame_trans_bundle, True)[0]
+            location = track.track_instances[i]
+            pnp_left_error[i] = [pnp_left_error[i][0]+calc_error(location, pnp_camera, point_3d_pnp), pnp_left_error[i][1]+1]
+            bundle_left_error[i] += [bundle_left_error[i][0]+calc_error(location, bundle_camera, point_3d_bundle), bundle_left_error[i][1]+1]
+
+    bundle_error, pnp_error = [], []
+    for k, v in sorted(pnp_left_error.items()):
+        pnp_error.append(v[0]/v[1])
+    for k, v in sorted(bundle_left_error.items()):
+        bundle_error.append(v[0]/v[1])
+
+    plt.plot(bundle_error)
+    print(pnp_left_error)
+    plt.plot(pnp_error)
+    plt.xlabel('distance from ref')
+    plt.ylabel('mean projection error')
+    plt.title("projection error vs dist")
+    plt.savefig("projection_vs_dist.png")
+    plt.clf()
+
+
 def reprojection_error(database: DataBase) -> None:
     """
-    This function calculate the reprojection error of all tracks in database.
+    This function calculate the reprojection error of track in database.
     """
     tracks_bigger_than_10 = list(np.array(database.tracks)[np.array(database.tracks) > 9])
     random_track = random.choice(tracks_bigger_than_10)
@@ -97,13 +233,14 @@ def get_camera_to_global(R_t: FloatNDArray) -> Tuple[FloatNDArray, FloatNDArray]
     return new_R, new_t[:, None]
 
 
-def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans) -> Tuple[gtsam.StereoCamera, gtsam.Pose3]:
+def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal3_S2Stereo, start_frame_trans: FloatNDArray, after_bundle: bool=False) -> Tuple[gtsam.StereoCamera, gtsam.Pose3]:
     """
     This function create and return stereo camera for a given frame.
     """
     curr_frame = database.frames[frame_idx]
     new_R, new_t = get_camera_to_global(curr_frame.transformation_from_zero)
-
+    if after_bundle:
+        new_R, new_t = get_camera_to_global(curr_frame.transformation_from_after_bundle)
     i_to_zero_trans = np.hstack((new_R, new_t))
     i_to_start_trans = compute_extrinsic_matrix(i_to_zero_trans, start_frame_trans)
     new_R = i_to_start_trans[:, :3]
@@ -113,8 +250,8 @@ def create_stereo_camera(database: DataBase, frame_idx: int, stereo_k: gtsam.Cal
     return gtsam.StereoCamera(frame_pose, stereo_k), frame_pose
 
 
-def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bundle_frames: List[int]) -> Tuple[
-    float, float, List[FloatNDArray], gtsam.NonlinearFactorGraph, gtsam.Values, List[int]]:
+def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bundle_frames: List[int], current_transformation: FloatNDArray=np.hstack((np.eye(3), np.zeros((3, 1))))) -> Tuple[
+    float, float, List[FloatNDArray], gtsam.NonlinearFactorGraph, gtsam.Values, List[int], FloatNDArray]:
     """
     This function perform bundle adjustment optimization on a given frames (bundle_frames).
     """
@@ -179,7 +316,21 @@ def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bun
     last_frame_pose = result.atPose3(frame_symbols[0])
     print("first bundle total error before optimization: ", error_before)
     print("first bundle total error after optimization: ", error_after)
-    return error_before, error_after, last_frame_pose, graph, result, frame_symbols
+    # todo need to save R_t after bundle to database
+    # print(current_transformation)
+    # for frame_symbol, frame_idx in zip(frame_symbols[::-1][:-1], bundle_frames[:-1]):
+    #
+    #     np.set_printoptions(precision=2)
+    #     print(frame_idx)
+    #     print(current_transformation)
+    #     pose_graph.update_database_pose(database, current_transformation, frame_idx)
+    #     pose = result.atPose3(frame_symbol)
+    #     R = pose.rotation().matrix()
+    #     t = pose.translation()
+    #     R_t = np.hstack((R, t[:, None])) # i->start
+    #     current_transformation = compute_extrinsic_matrix(R_t, current_transformation)
+
+    return error_before, error_after, last_frame_pose, graph, result, frame_symbols, current_transformation
 
 
 def perform_bundle(database: DataBase) -> FloatNDArray:
@@ -187,9 +338,9 @@ def perform_bundle(database: DataBase) -> FloatNDArray:
     This function perform bundle adjustment optimization on database.
     """
     stereo_k = get_stereo_k()
-    current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     locations = np.zeros((3450, 3))
     jump = 19
+    current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     for i in range(0, 3450, jump):
         print(i)
         bundle_frames = list(range(i, min(i + jump, 3449) + 1))
@@ -222,10 +373,23 @@ def plot_local_error(real_locs: FloatNDArray, est_locs: FloatNDArray, title: str
     plt.clf()
 
 
-# ex5
-database = open_database()
-reprojection_error(database)
-l = read_poses().T
-l2 = perform_bundle(database)
-plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
-plot_local_error(l, l2)  # ploting the distance error in meters
+
+if __name__ == '__main__':
+    # with open("db_after_bundle.db", "rb") as file:
+    #     database = pickle.load(file)
+
+    database = open_database()
+    # reprojection_error(database)
+    # plot_local_error(l, l3, "check")
+    # 1 graph
+    # projection_error_pnp_vs_bundle(0,28, database)
+
+    print("a")
+    l = read_poses().T
+    # l2 = perform_bundle(database)
+    l3 = get_pnp_locations(database)
+    real_ext_mat = read_ground_truth_extrinsic_mat()
+    # 2 graph
+    pnp_ext_mat = get_pnp_extrinsic_mat(database)
+    plot_trajectury(l3[0], l3[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
+    absolute_estimation_error(l, l3, real_ext_mat, pnp_ext_mat)  # ploting the distance error in meters

@@ -2,12 +2,12 @@ from bundle_adjustment import *
 from gtsam import gtsam, utils
 
 
-def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first: int, last: int) -> Tuple[gtsam.Pose3, gtsam.symbol, gtsam.noiseModel.Gaussian]:  # q 6.1
+def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first: int, last: int, current_transformation: FloatNDArray=np.hstack((np.eye(3), np.zeros((3, 1))))) -> Tuple[gtsam.Pose3, gtsam.symbol, gtsam.noiseModel.Gaussian, FloatNDArray]:  # q 6.1
     """
     This function extract the relative pose and the relative marginal covariance matrix between the frames first and last.
     """
     bundle_frames = list(range(first, last + 1))
-    graph, result, frame_symbols = perform_bundle_window(database, stereo_k, bundle_frames)[3:]
+    graph, result, frame_symbols, current_transformation = perform_bundle_window(database, stereo_k, bundle_frames, current_transformation)[3:]
     marginals = gtsam.Marginals(graph, result)  # 6.1.1
     # plot_trajectory(1, result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")  # 6.1.2
     # plt.show()
@@ -26,7 +26,7 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     np.set_printoptions(precision=5, suppress=True)
     # print("relative pose: \n", relative_pose)  # 6.1.3
     # print("the relative marginal covariance matrix: \n", relative_marginal_covariance_mat)  # 6.1.3
-    return pose_ck, ck, relative_marginal_covariance_mat
+    return pose_ck, ck, relative_marginal_covariance_mat, current_transformation
 
 
 def update_database_pose(database: DataBase, current_trans_to_zero: FloatNDArray, index: int) -> None:
@@ -34,7 +34,7 @@ def update_database_pose(database: DataBase, current_trans_to_zero: FloatNDArray
     This function update the transformation_from_zero of frame index.
     """
     new_R, new_t = get_camera_to_global(current_trans_to_zero)
-    database.frames[index].set_transformation_from_zero(np.hstack((new_R, new_t)))
+    database.frames[index].set_transformation_from_zero_after_bundle(np.hstack((new_R, new_t)))
 
 
 def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple[
@@ -44,6 +44,7 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
     """
     initial_poses = np.zeros((3450, 3))
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
+    current_transformation2 = np.hstack((np.eye(3), np.zeros((3, 1))))
     x_start = gtsam.symbol('x', 0)
     initialEstimate = gtsam.Values()
     graph = gtsam.NonlinearFactorGraph()
@@ -61,7 +62,8 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
     jump = 19
     for i in range(0, 3450, jump):
         print(i)
-        pose_ck, ck, relative_marginal_covariance_mat = extract_relative_pose(database, stereo_k, i, min(i + jump, 3449))
+        pose_ck, ck, relative_marginal_covariance_mat, current_transformation2 = extract_relative_pose(database, stereo_k, i, min(i + jump, 3449), current_transformation2)
+        # todo: save the R_t in bundle_window instead
         update_database_pose(database, current_transformation, i)
         R = pose_ck.rotation().matrix()
         t = pose_ck.translation()
@@ -85,6 +87,7 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
         curr_symbol = ck
         curr_node = next_node
     update_database_pose(database, current_transformation, 3449)
+    # save_database(database, "db_after_bundle.db")
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
     result = optimizer.optimize()

@@ -1,5 +1,7 @@
 from pose_graph import *
-from gtsam import gtsam, utils
+from gtsam import gtsam
+from gtsam.utils import plot
+
 
 
 def display_quad_feature(frames_idx: List[int], locations: Tuple[TrackInstance, TrackInstance], loc_ids: int) -> None:
@@ -179,14 +181,14 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
     count_loop_closure_success = 0
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
-            cov, success = get_relative_covariance(all_nodes[c_n_idx], all_nodes[c_i_idx])
+            cov, success = get_relative_covariance(all_nodes[c_i_idx], all_nodes[c_n_idx])
             rel_pos = all_poses[c_i_idx].inverse().between(all_poses[c_n_idx].inverse())
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos)
             if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
                 print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a {mahalanobis_dist} distance")
                 inliers_percentage, inliers_locs = consensus_matching(min(c_n_idx * 19, 3449), min(c_i_idx * 19, 3449))
                 if inliers_percentage >= CONSENSUS_MATCHING_THRESHOLD:
-                    # print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a possible match!")
+                    print(f"Frames {c_n_idx * 19} and {c_i_idx * 19} are a possible match!")
                     count_loop_closure_success += 1
                     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_poses[c_n_idx], [min(c_i_idx * 19, 3449), min(c_n_idx * 19, 3449)],
                                                              database, stereo_k, inliers_locs)
@@ -200,7 +202,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
 
                     plot_trajectory_from_result(result,f"new_traj_results/after_frames_{c_n_idx * 19}_{c_i_idx * 19}_traj_2d")
                     plot_trajectory(1, result, scale=2, title="Locations as a 3D")
-                    plt.savefig(f"new_traj_results/trajeafter_frames_{c_n_idx * 19}_{c_i_idx * 19}_traj_3d.png")
+                    plt.savefig(f"new_traj_results/after_frames_{c_n_idx * 19}_{c_i_idx * 19}_traj_3d.png")
                     plt.clf()
 
 
@@ -325,7 +327,7 @@ def plot_trajectory(fignum: int, values: gtsam.Values, scale: float = 1, margina
         else:
             covariance = None
 
-        utils.plot.plot_pose2_on_axes(axes,
+        plot.plot_pose2_on_axes(axes,
                            pose,
                            covariance=covariance,
                            axis_length=scale)
@@ -339,7 +341,27 @@ def plot_trajectory(fignum: int, values: gtsam.Values, scale: float = 1, margina
         else:
             covariance = None
 
-        utils.plot.plot_pose3_on_axes(axes, pose, P=covariance, axis_length=scale)
+        plot.plot_pose3_on_axes(axes, pose, P=covariance, axis_length=scale)
 
     fig.suptitle(title)
     fig.canvas.set_window_title(title.lower())
+
+
+if __name__ == '__main__':
+
+    database = open_database()
+    # database = create_database()
+    stereo_k = get_stereo_k()
+    print("n")
+    all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
+    # marginals_before = gtsam.Marginals(graph, result)
+    # plot_local_error(l, l2, "absolute error in meters before loop closure")
+    # res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
+
+    locations = np.zeros((3450, 3))
+    for i in range(0, 3450, 19):
+        locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
+
+    l = read_poses().T
+    l2 = locations.T
+    plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
