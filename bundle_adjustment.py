@@ -1,11 +1,12 @@
 import numpy as np
 
-import pose_graph
+# import pose_graph
 from database import *
 from gtsam import gtsam, utils
 from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
 # from gtsam.gtsam import BetweenFactorPose3
 from gtsam.noiseModel import Gaussian
+from typing import List
 
 
 from collections import defaultdict
@@ -59,7 +60,6 @@ def read_ground_truth_extrinsic_mat(first_index: int = 0, last_index: int = 3450
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
             extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
-
             new_R, new_t = get_camera_to_global(extrinsic_matrix)
             i_to_zero_trans = np.hstack((new_R, new_t))
             new_R = i_to_zero_trans[:, :3]
@@ -70,7 +70,7 @@ def read_ground_truth_extrinsic_mat(first_index: int = 0, last_index: int = 3450
     return extrinsic_matrix_arr
 
 
-def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations: FloatNDArray, real_ext_mat: List[gtsam.Pose3], estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450, jump:int = 1, estimation_type:str="PnP"):
+def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations: FloatNDArray, real_ext_mat: List[gtsam.Pose3], estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450, jump:int = 1, estimation_type:str="PnP") -> None:
     """
     This function plot the absolute estimation error in X, Y, Z axis, the total error norm and the angle error.
     """
@@ -81,15 +81,18 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     z_error = np.sqrt(sq_dist_error[2])
     angle_error = np.zeros((num_of_cameras, 3))
 
-    # angle error
-    for i in range(num_of_cameras, jump):
-        pnp_angles = estimated_ext_mat[i].rotation().ypr()
+    # angle error calc
+    j=0
+    for i in range(0, num_of_cameras, jump):
+        estimate_angles = estimated_ext_mat[j].rotation().ypr()
         real_angles = real_ext_mat[i].rotation().ypr()
-        angle_error[i] = real_angles-pnp_angles
+        angle_error[i] = real_angles-estimate_angles
+        j+=1
     angle_error = (angle_error.T) ** 2
     angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
 
     plt.figure(figsize=(15, 5))
+    plt.ylim([0, 36])
     plt.plot(norm, label="norm")
     plt.plot(x_error, label="x error")
     plt.plot(y_error, label="y error")
@@ -97,7 +100,7 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     plt.plot(angle_error, label="angle error")
     plt.legend()
     plt.title(f"Absolute {estimation_type} estimation error")
-    plt.savefig("absolute_pnp_estimation_error.png")
+    plt.savefig(f"absolute_{estimation_type}_estimation_error.png")
     plt.clf()
 
 
@@ -148,6 +151,54 @@ def projection_error_pnp_vs_bundle(start_frame_idx: int, end_frame_idx: int, dat
     plt.ylabel('mean projection error')
     plt.title("projection error vs dist")
     plt.savefig("projection_vs_dist.png")
+    plt.clf()
+
+
+def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3], estimated_ext_mat: List[gtsam.Pose3], estimation_type: str) -> None:
+    # real_relative_poses = []
+    # estimated_relative_poses = []
+    angle_error = np.zeros((3450-sequence_len, 3))
+
+    real_locations = np.zeros((3450-sequence_len, 3))
+    estimated_locations = np.zeros((3450-sequence_len, 3))
+    for i in range(0, 3450-sequence_len):
+        real_pose_c0 = real_ext_mat[i]
+        real_pose_ck = real_ext_mat[i+sequence_len]
+        real_relative_pose = real_pose_c0.between(real_pose_ck)
+        # real_relative_poses.append(real_relative_pose)
+        real_locations[i] = real_relative_pose.translation()
+        estimate_angles = real_relative_pose.rotation().ypr()
+
+        est_pose_c0 = estimated_ext_mat[i]
+        est_pose_ck = estimated_ext_mat[i+sequence_len]
+        est_relative_pose = est_pose_c0.between(est_pose_ck)
+        # estimated_relative_poses.append(est_relative_pose)
+        estimated_locations[i] = est_relative_pose.translation()
+        real_angles = est_relative_pose.rotation().ypr()
+
+        # angle_error[i] = (real_angles-estimate_angles) /  # todo
+
+    real_locations = real_locations.T
+    estimated_locations = estimated_locations.T
+    error = np.abs(real_locations - estimated_locations)*100 / real_locations  # todo
+    print(error[1])
+    sq_error = error**2
+    norm = np.sqrt(sq_error[0] + sq_error[1] + sq_error[2])
+    x_error = error[0]
+    y_error = error[1]
+    z_error = error[2]
+    # angle_error = (angle_error.T) ** 2
+    # angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+
+    plt.figure(figsize=(15, 5))
+    plt.plot(norm, label="norm")
+    plt.plot(x_error, label="x error")
+    plt.plot(y_error, label="y error")
+    plt.plot(z_error, label="z error")
+    # plt.plot(angle_error, label="angle error")
+    plt.legend()
+    plt.title(f"relative {estimation_type} estimation error for sequence length of {sequence_len}")
+    plt.savefig(f"relative_{estimation_type}_estimation_error_{sequence_len}.png")
     plt.clf()
 
 
@@ -392,4 +443,5 @@ if __name__ == '__main__':
     # 2 graph
     pnp_ext_mat = get_pnp_extrinsic_mat(database)
     plot_trajectury(l3[0], l3[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
-    absolute_estimation_error(l, l3, real_ext_mat, pnp_ext_mat)  # ploting the distance error in meters
+    # absolute_estimation_error(l, l3, real_ext_mat, pnp_ext_mat)  # ploting the distance error in meters
+    relative_estimation_error(800, real_ext_mat, pnp_ext_mat, "PnP")
