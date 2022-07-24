@@ -1,7 +1,27 @@
+from typing import Iterable
+
 from pose_graph import *
 from gtsam import gtsam
 from gtsam.utils import plot
 
+
+def get_absolute_loop_closure_error(result: gtsam.Values, num_of_cameras: int = 3450, jump: int=19) -> None:  # estimated_ext_mat is all poses (from create_pose_graph)
+    """
+    This function plot the absolute loop closure estimation error in X, Y, Z axis, the total error norm and the angle error.
+    """
+    real_locs = read_poses()
+    estimated_locations = np.zeros((num_of_cameras, 3))
+    estimated_ext_mat = []
+    # make real locs suit estimated locs
+    for i in range(0, num_of_cameras, jump):
+        estimated_locations[min(i + jump, num_of_cameras-1)] = result.atPose3(gtsam.symbol('x', i)).translation()
+        estimated_ext_mat.append(result.atPose3(gtsam.symbol('x', i)))
+    needed_indices = [i for i in range(0, num_of_cameras, jump)] + [num_of_cameras-1]
+    for i in range(real_locs.shape[0]):
+        if i not in needed_indices:
+            real_locs[i] = [0, 0, 0]
+    real_ext_mat = read_ground_truth_extrinsic_mat()
+    absolute_estimation_error(real_locs.T, estimated_locations.T, real_ext_mat, estimated_ext_mat, jump=19, estimation_type="loop_closure")
 
 
 def display_quad_feature(frames_idx: List[int], locations: Tuple[TrackInstance, TrackInstance], loc_ids: int) -> None:
@@ -54,8 +74,8 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
     locs = []
     left_1_kp = []
     left_2_kp = []
-    for idx in quad.stereo_pair2.left_image.get_pnp_inliers_kps_idx():
-        kp_idx = quad.stereo_pair2.left_image.get_quad_inliers_kps_idx()[idx]
+    for idx in quad.stereo_pair2.left_image._get_pnp_inliers_kps_idx():
+        kp_idx = idx
         r_idx = quad.stereo_pair2.get_left_right_kps_idx_dict()[kp_idx]
         kp_r_2 = quad.stereo_pair2.right_image.kps[r_idx]
         kp_l_2 = quad.stereo_pair2.left_image.kps[kp_idx]
@@ -215,7 +235,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                 # print("Mahalanobis distance:", mahalanobis_dist)
     print(count)
     print(f"{count_loop_closure_success} successful loop closure detected")
-    # plot_trajectory_from_result(result)
+    plot_trajectory_from_result(result, "loop_closure_traj")
     # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
     # plt.savefig(f"after_frames_{c_n_idx * 19}_{c_i_idx * 19}_traj_3d.png")
     # plt.clf()
@@ -354,14 +374,16 @@ if __name__ == '__main__':
     stereo_k = get_stereo_k()
     print("n")
     all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
+    res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
+    get_absolute_loop_closure_error(res, jump=19)
     # marginals_before = gtsam.Marginals(graph, result)
     # plot_local_error(l, l2, "absolute error in meters before loop closure")
-    # res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
 
-    locations = np.zeros((3450, 3))
-    for i in range(0, 3450, 19):
-        locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
 
-    l = read_poses().T
-    l2 = locations.T
-    plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
+    # locations = np.zeros((3450, 3))
+    # for i in range(0, 3450, 19):
+    #     locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
+    #
+    # l = read_poses().T
+    # l2 = locations.T
+    # plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
