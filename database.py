@@ -156,11 +156,11 @@ def save_database(database: DataBase, name: str = "database") -> None:
         pickle.dump(database, file)
 
 
-def open_database() -> DataBase:
+def open_database(database_name: str = "database") -> DataBase:
     """
     This function open the database file and return thr database object.
     """
-    with open("database.db", "rb") as file:
+    with open(f"{database_name}.db", "rb") as file:
         database = pickle.load(file)
     return database
 
@@ -354,4 +354,4 @@ def present_statistics(database: DataBase) -> None:
 
 if __name__ == '__main__':
     database = create_database()
-    save_database(database)
+    save_database(database, f"{DETECTOR.__name__[:-7]}_{NORM}_{DEVIATION_THRESHOLD}_{PNP_THRESHOLD}_{RANSAC_SUCCESS_PROB}")

@@ -6,13 +6,17 @@ from typing import Tuple
 import os
 from tqdm import tqdm
 
-DEVIATION_THRESHOLD = 1
-PNP_THRESHOLD = 2
-RANSAC_NUM_SAMPLES = 4
+DETECTOR = cv2.SIFT_create
+NORM = cv2.NORM_L2
+DEVIATION_THRESHOLD = 0.5
+PNP_THRESHOLD = 1
 RANSAC_SUCCESS_PROB = 0.99
+
+RANSAC_NUM_SAMPLES = 4
 MAHALANOBIS_DISTANCE_TEST = 500000
 INLIERS_THRESHOLD = 100
 CONSENSUS_MATCHING_THRESHOLD = 0.6
+
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -36,7 +40,7 @@ def show_key_points(idx: int, kps1: NDArray[KeyPoint], kps2: NDArray[KeyPoint]) 
 
 def detect_key_points(idx: int) -> Tuple[Image, Image]:
     img1_mat, img2_mat = read_images(idx, ImageColor.GRAY)
-    detector = cv2.AKAZE_create()
+    detector = DETECTOR()
     kps1, des1 = detector.detectAndCompute(img1_mat, None)
     kps2, des2 = detector.detectAndCompute(img2_mat, None)
     img1 = Image(img1_mat, np.array(kps1), des1)
@@ -46,7 +50,7 @@ def detect_key_points(idx: int) -> Tuple[Image, Image]:
 
 
 def match_key_points(img1: Image, img2: Image, set_matches_idx: bool = True) -> NDArray[DMatch]:
-    brute_force = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    brute_force = cv2.BFMatcher(NORM, crossCheck=True)
     matches = np.array(brute_force.match(img1.desc, img2.desc))
     img1_kps_to_matches_idx = None
     img2_kps_to_matches_idx = None
