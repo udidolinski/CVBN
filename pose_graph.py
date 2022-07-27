@@ -1,33 +1,26 @@
 import numpy as np
 
 from bundle_adjustment import *
+from graph_utils import *
 from gtsam import gtsam, utils
 from graph_utils import *
 from typing import List
 
 
-def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450, jump: int=19) -> None:  # estimated_ext_mat is all poses (from create_pose_graph)
+def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450, jump: int=JUMP) -> None:  # estimated_ext_mat is all poses (from create_pose_graph)
     """
     This function plot the absolute pose graph estimation (without loop closure) error in X, Y, Z axis, the total
     error norm and the angle error.
     """
-    real_locs = read_poses()
-    # make real locs suit estimated locs
     needed_indices = [i for i in range(0, num_of_cameras, jump)] + [num_of_cameras-1]
-    for i in range(real_locs.shape[0]):
-        if i not in needed_indices:
-            real_locs[i] = [0, 0, 0]
-
-    print(real_locs.shape)
+    real_locs = read_poses()[needed_indices]
     real_ext_mat = read_ground_truth_extrinsic_mat()
-    print(len(estimated_ext_mat))
-    print(len(real_ext_mat))
-    estimated_locations = np.zeros((num_of_cameras, 3))
+    estimated_locations = []
     j=0
-    for i in needed_indices:
-        estimated_locations[i] = estimated_ext_mat[j].translation()
-        j+=1
-    absolute_estimation_error(real_locs.T, estimated_locations.T, real_ext_mat, estimated_ext_mat, jump=19, estimation_type="pose_graph")
+    for mat in estimated_ext_mat:
+        estimated_locations.append(mat.translation())
+    estimated_locations = np.array(estimated_locations)
+    absolute_estimation_error(real_locs.T, estimated_locations.T, real_ext_mat, estimated_ext_mat, jump=JUMP, estimation_type="pose_graph")
 
 
 def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first: int, last: int, current_transformation: FloatNDArray=np.hstack((np.eye(3), np.zeros((3, 1))))) -> Tuple[gtsam.Pose3, gtsam.symbol, gtsam.noiseModel.Gaussian, FloatNDArray]:  # q 6.1
@@ -87,7 +80,7 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
     all_nodes = [start_node]
     all_poses = [gtsam.Pose3()]
     rel_poses = [gtsam.Pose3()]
-    jump = 19
+    jump = JUMP
     for i in range(0, 3450, jump):
         print(i)
         pose_ck, ck, relative_marginal_covariance_mat, current_transformation2 = extract_relative_pose(database, stereo_k, i, min(i + jump, 3449), current_transformation2)
@@ -106,7 +99,7 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
         relative_pose = curr_pose.inverse().between(pose_ck)
         initialEstimate.insert(ck, relative_pose)
         next_node = Node(ck, {})
-        next_node.add_neighbor(curr_node, relative_marginal_covariance_mat)
+        # next_node.add_neighbor(curr_node, relative_marginal_covariance_mat)
         all_nodes.append(next_node)
         curr_node.add_neighbor(next_node, relative_marginal_covariance_mat)
         factor = gtsam.BetweenFactorPose3(curr_symbol, ck, curr_pose.between(relative_pose), relative_marginal_covariance_mat)
@@ -145,4 +138,4 @@ if __name__ == '__main__':
     database = open_database()
 
     all_poses, all_nodes, graph, optimizer, rel_poses, initial_poses, result = create_pose_graph(database, stereo_k)
-    get_absolute_pose_graph_error(all_poses, jump=19)
+    get_absolute_pose_graph_error(all_poses, jump=JUMP)

@@ -6,11 +6,11 @@ from typing import Tuple
 import os
 from tqdm import tqdm
 
-DETECTOR = cv2.SIFT_create
-NORM = cv2.NORM_L2
+DETECTOR = cv2.AKAZE_create
+NORM = cv2.NORM_HAMMING
 DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 1
-RANSAC_SUCCESS_PROB = 0.99
+RANSAC_SUCCESS_PROB = 0.9999
 
 RANSAC_NUM_SAMPLES = 4
 MAHALANOBIS_DISTANCE_TEST = 500000
@@ -449,7 +449,7 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
     i = 0
     while i <= num_iter:
         # print("first part: index and num_iter", i, num_iter)
-        if i == 178:
+        if i == 1132:
             break
         max_num_inliers, num_iter = ransac_helper(quad, k, max_num_inliers, True, p, s, num_iter)[:2]
         i += 1

@@ -7,6 +7,7 @@ from gtsam.gtsam import NonlinearFactorGraph, GenericStereoFactor3D
 # from gtsam.gtsam import BetweenFactorPose3
 from gtsam.noiseModel import Gaussian
 from typing import List
+JUMP = 19
 
 
 from collections import defaultdict
@@ -29,7 +30,7 @@ def get_pnp_locations(database:DataBase) -> FloatNDArray:
     This function returns all location after PnP estimation from the database.
     """
     locations = np.zeros((3450, 3))
-    for i in range(3450):
+    for i in range(0, 3450):
         locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero())
     return locations.T
 
@@ -88,16 +89,19 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
         real_angles = real_ext_mat[i].rotation().ypr()
         angle_error[i] = real_angles-estimate_angles
         j+=1
-    angle_error = (angle_error.T) ** 2
-    angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+    # angle_error = (angle_error.T) ** 2
+    # angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+    x = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras-1]
+    if estimation_type == "PnP":
+        x = [i for i in range(num_of_cameras)]
 
     plt.figure(figsize=(15, 5))
     plt.ylim([0, 36])
-    plt.plot(norm, label="norm")
-    plt.plot(x_error, label="x error")
-    plt.plot(y_error, label="y error")
-    plt.plot(z_error, label="z error")
-    plt.plot(angle_error, label="angle error")
+    plt.plot(x, norm, label="norm")
+    plt.plot(x, x_error, label="x error")
+    plt.plot(x, y_error, label="y error")
+    plt.plot(x, z_error, label="z error")
+    # plt.plot(angle_error, label="angle error")
     plt.legend()
     plt.title(f"Absolute {estimation_type} estimation error")
     plt.savefig(f"absolute_{estimation_type}_estimation_error.png")
@@ -265,9 +269,9 @@ def find_end_keyframe(database: DataBase, frame_id: int) -> int:
     max_frame_counter = Counter()
     for track_id in database.frames[frame_id].track_ids:
         curr_max_frame_id = database.tracks[track_id].frame_ids[-1]
-        # if curr_max_frame_id-frame_id >= 19:
-        #     return frame_id+19
-        max_frame_counter[min(curr_max_frame_id, frame_id + 19)] += 1
+        # if curr_max_frame_id-frame_id >= JUMP:
+        #     return frame_id+JUMP
+        max_frame_counter[min(curr_max_frame_id, frame_id + JUMP)] += 1
     threshold = 20
     max_frame_set = {key for key, value in max_frame_counter.items() if value >= threshold}
     return max(max_frame_set)
@@ -311,7 +315,7 @@ def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bun
     initialEstimate = gtsam.Values()
     graph = gtsam.NonlinearFactorGraph()
     x_start = gtsam.symbol('x', start_frame)
-    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1, 0.5, 0.1]))
+    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.1, 0.5, 0.1]))
     graph.add(gtsam.PriorFactorPose3(x_start, gtsam.Pose3(), gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001, 0.001, 0.001, 0.001, 0.001, 0.001]))))
     track_id_to_point = {}
     initialEstimate.insert(x_start, gtsam.Pose3())
@@ -390,7 +394,7 @@ def perform_bundle(database: DataBase) -> FloatNDArray:
     """
     stereo_k = get_stereo_k()
     locations = np.zeros((3450, 3))
-    jump = 19
+    jump = JUMP
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     for i in range(0, 3450, jump):
         print(i)
@@ -411,7 +415,7 @@ def plot_local_error(real_locs: FloatNDArray, est_locs: FloatNDArray, title: str
     :param est_locs: estimated locations.
     :param title: wanted plot title
     """
-    jump = 19
+    jump = JUMP
     res = []
     dist_error = (real_locs - est_locs) ** 2
     error = np.sqrt(dist_error[0] + dist_error[1] + dist_error[2])
@@ -429,19 +433,22 @@ if __name__ == '__main__':
     # with open("db_after_bundle.db", "rb") as file:
     #     database = pickle.load(file)
 
-    database = open_database()
+    database = open_database("SIFT_4_0.5_1_0.99")
     # reprojection_error(database)
     # plot_local_error(l, l3, "check")
     # 1 graph
     # projection_error_pnp_vs_bundle(0,28, database)
 
-    print("a")
+    # print("a")
     l = read_poses().T
-    # l2 = perform_bundle(database)
     l3 = get_pnp_locations(database)
-    real_ext_mat = read_ground_truth_extrinsic_mat()
+    plot_trajectury(l3[0], l3[2], l[0], l[2], "before_bundle_newwwww")
+    l2 = perform_bundle(database)
+    plot_trajectury(l2[0], l2[2], l[0], l[2], "after_bundle_newwwww")
+
+    # real_ext_mat = read_ground_truth_extrinsic_mat()
     # 2 graph
-    pnp_ext_mat = get_pnp_extrinsic_mat(database)
-    plot_trajectury(l3[0], l3[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
-    # absolute_estimation_error(l, l3, real_ext_mat, pnp_ext_mat)  # ploting the distance error in meters
-    relative_estimation_error(800, real_ext_mat, pnp_ext_mat, "PnP")
+    # pnp_ext_mat = get_pnp_extrinsic_mat(database)
+    # plot_trajectury(l3[0], l3[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
+    # # absolute_estimation_error(l, l3, real_ext_mat, pnp_ext_mat)  # ploting the distance error in meters
+    # relative_estimation_error(800, real_ext_mat, pnp_ext_mat, "PnP")
