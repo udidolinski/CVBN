@@ -301,7 +301,7 @@ def plot_uncertainty_graph(marginals_before: gtsam.Marginals, marginals_after: g
     plt.clf()
 
 
-def plot_trajectory_from_result(result: gtsam.Values, title: str) -> None:
+def plot_trajectory_from_result(result: gtsam.Values, title: str, num_of_cameras: int = 3450) -> None:
     """
     This function plot the trajectory from a given result.
     """
@@ -385,7 +385,7 @@ def plot_trajectory(fignum: int, values: gtsam.Values, scale: float = 1, margina
 
 if __name__ == '__main__':
     num_of_cameras = 3450
-    database = open_database("akaze_hamming_05_1_09999/database")
+    database = open_database("database")
     # database = create_database()
     real_ext_mat = read_ground_truth_extrinsic_mat()
     pnp_ext_mat = get_pnp_extrinsic_mat(database)
@@ -402,18 +402,18 @@ if __name__ == '__main__':
     all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
     plot_trajectory_from_result(result, "new_after_pose")
     get_absolute_pose_graph_error(all_poses)
-    res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
-    plot_trajectory_from_result(res, "new_after_loop")
-    get_absolute_loop_closure_error(res)
+    # res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
+    # plot_trajectory_from_result(res, "new_after_loop")
+    # get_absolute_loop_closure_error(res)
     #get_absolute_loop_closure_error(res, jump=JUMP)
     # marginals_before = gtsam.Marginals(graph, result)
     # plot_local_error(l, l2, "absolute error in meters before loop closure")
 
 
-    # locations = np.zeros((3450, 3))
-    # for i in range(0, 3450, JUMP):
-    #     locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
-    #
-    # l = read_poses().T
-    # l2 = locations.T
-    # plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
+    locations = np.zeros((3450, 3))
+    for i in range(0, 3450, JUMP):
+        locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
+
+    l = read_poses().T
+    l2 = locations.T
+    plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth

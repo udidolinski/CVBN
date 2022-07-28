@@ -23,6 +23,9 @@ POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
 
 
 def read_images(idx: int, color: ImageColor) -> Tuple[NDArray[np.uint8], NDArray[np.uint8]]:
+    """
+    This function read the image numbered idx.
+    """
     img_name = '{:06d}.png'.format(idx)
     img1 = cv2.imread(os.path.join(DATA_PATH, 'image_0', img_name), color)
     img2 = cv2.imread(os.path.join(DATA_PATH, 'image_1', img_name), color)
@@ -30,6 +33,9 @@ def read_images(idx: int, color: ImageColor) -> Tuple[NDArray[np.uint8], NDArray
 
 
 def show_key_points(idx: int, kps1: NDArray[KeyPoint], kps2: NDArray[KeyPoint]) -> None:
+    """
+    This function present given key points on the left and right images.
+    """
     img1, img2 = read_images(idx, ImageColor.RGB)
     cv2.drawKeypoints(img1, kps1[500:], img1, (255, 0, 0), flags=cv2.DRAW_MATCHES_FLAGS_DRAW_OVER_OUTIMG)
     cv2.imshow("Output Image 1", img1)
@@ -39,6 +45,9 @@ def show_key_points(idx: int, kps1: NDArray[KeyPoint], kps2: NDArray[KeyPoint]) 
 
 
 def detect_key_points(idx: int) -> Tuple[Image, Image]:
+    """
+    This function finds key points on the left and right images numbered idx.
+    """
     img1_mat, img2_mat = read_images(idx, ImageColor.GRAY)
     detector = DETECTOR()
     kps1, des1 = detector.detectAndCompute(img1_mat, None)
@@ -49,7 +58,10 @@ def detect_key_points(idx: int) -> Tuple[Image, Image]:
     return img1, img2
 
 
-def match_key_points(img1: Image, img2: Image, set_matches_idx: bool = True) -> NDArray[DMatch]:
+def match_key_points(img1: Image, img2: Image, set_matches_idx: bool = True) -> Tuple[NDArray[DMatch], List[int], List[int]]:
+    """
+    This function finds matches between img1 and img2, and set the relevant key points indices of img1 and img2.
+    """
     brute_force = cv2.BFMatcher(NORM, crossCheck=True)
     matches = np.array(brute_force.match(img1.desc, img2.desc))
     img1_kps_to_matches_idx = None
@@ -70,6 +82,9 @@ def match_key_points(img1: Image, img2: Image, set_matches_idx: bool = True) -> 
 
 
 def show_matches(img1: Image, img2: Image, matches: NDArray[DMatch]) -> None:
+    """
+    This function presents the given matches between img1 and img2.
+    """
     random_matches = matches[np.random.randint(len(matches), size=20)]
     res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3), dtype=np.uint8)
     cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
@@ -78,6 +93,9 @@ def show_matches(img1: Image, img2: Image, matches: NDArray[DMatch]) -> None:
 
 
 def print_feature_descriptors(descriptors1: NDArray[np.uint8], descriptors2: NDArray[np.uint8]) -> None:
+    """
+    This function print the given descriptors arrays.
+    """
     print("The first two feature descriptors of image 1:")
     print(descriptors1[:2])
     print("The first two feature descriptors of image 2:")

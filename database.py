@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 from initial_estimate import *
 from typing import Iterator
 import pickle
@@ -224,9 +226,9 @@ def display_track(database: DataBase, random_track: Track = None) -> None:
         x1_r, x2_r, y1_r, y2_r = result_image_size(img2.shape, int(track_instance.x_r), int(track_instance.y))
         res[:, :100] = img1[y1_l:y2_l, x1_l:x2_l]
         res[:, 100:] = img2[y1_r:y2_r, x1_r:x2_r]
-        cv2.imshow(f"{frame}", res)
-        # cv2.imwrite(f"Output Image {frame}.png", res)
-    cv2.waitKey(0)
+        # cv2.imshow(f"{frame}", res)
+        cv2.imwrite(f"Output Image {frame}.png", res)
+    # cv2.waitKey(0)
 
 
 def read_camera_matrices(first_index: int = 0, last_index: int = 3450) -> Iterator[FloatNDArray]:
@@ -298,7 +300,7 @@ def reprojection(database: DataBase) -> None:
     plot_projection_error('reprojection error', left_error, right_error)
 
 
-def plot_projection_error(title: str, left_error: List[float], right_error: List[float] = None) -> None:
+def plot_projection_error(title: str, left_error: List[float], right_error: List[float] = None, file_name: str="preojection_error") -> None:
     """
     This functions plots the reprojection error of the left images and the right images (or only the left images)
     :param title:
@@ -306,14 +308,15 @@ def plot_projection_error(title: str, left_error: List[float], right_error: List
     :param right_error:
     :return:
     """
+    plt.figure(figsize=(15, 5))
     plt.plot(left_error, label="left error")
-    if right_error:
+    if right_error is not None:
         plt.plot(right_error, label="right error")
     plt.legend()
     plt.xlabel('frame')
     plt.ylabel('error')
     plt.title(title)
-    plt.savefig("p_e.png")
+    plt.savefig(f"{file_name}.png")
     plt.clf()
     # plt.show()
 
