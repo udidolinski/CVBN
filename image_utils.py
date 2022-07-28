@@ -482,7 +482,10 @@ class DataBase:
         """
         This function return the mean number of frame links of track in the database.
         """
-        return len(self.tracks) / len(self.frames)
+        tracks_sum = 0
+        for frame in self.frames:
+            tracks_sum += len(frame.track_ids)
+        return tracks_sum / len(self.frames)
 
     def create_connectivity_graph(self) -> None:
         """
