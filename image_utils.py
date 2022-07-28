@@ -499,7 +499,8 @@ class DataBase:
         plt.xlabel('frame')
         plt.ylabel('outgoing tracks')
         plt.title('connectivity graph')
-        plt.show()
+        plt.savefig("connectivity_graph.png")
+        plt.clf()
 
     def inliers_percentage_graph(self) -> None:
         """
@@ -512,7 +513,8 @@ class DataBase:
         plt.xlabel('frame')
         plt.ylabel('inliers percentage')
         plt.title('percentage graph')
-        plt.show()
+        plt.savefig("percentage_graph.png")
+        plt.clf()
 
     def create_track_length_histogram_graph(self) -> None:
         """
@@ -526,4 +528,5 @@ class DataBase:
         plt.xlabel('track length')
         plt.ylabel('track #')
         plt.title('track length histogram')
-        plt.show()
+        plt.savefig("track_length_histogram.png")
+        plt.clf()
