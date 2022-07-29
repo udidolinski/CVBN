@@ -343,16 +343,17 @@ def present_statistics(database: DataBase) -> None:
     :param database:
     :return:
     """
-    print("num_of_tracks: ", database.get_num_of_tracks())
-    print("num_of_frames: ", database.get_num_of_frames())
-    print("mean track length: ", database.get_mean_track_length())
-    print("min track length: ", database.get_min_track_length())
-    print("max track length: ", database.get_max_track_length())
-    print("mean number of frame links: ", database.get_mean_number_of_frame_links())
-    display_track(database)
+    print("Total number of tracks: ", database.get_num_of_tracks())
+    print("Number of frames: ", database.get_num_of_frames())
+    print("Mean track length: ", database.get_mean_track_length())
+    print("Min track length: ", database.get_min_track_length())
+    print("Max track length: ", database.get_max_track_length())
+    print("Mean number of frame links: ", database.get_mean_number_of_frame_links())
+    # display_track(database)
     database.create_connectivity_graph()
     database.inliers_percentage_graph()
     database.create_track_length_histogram_graph()
+    # database.num_of_matches_per_frame_graph()  # todo
     reprojection(database)
 
 

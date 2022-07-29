@@ -1474,6 +1474,7 @@
 #     fig.suptitle(title)
 #     fig.canvas.set_window_title(title.lower())
 #
+import random
 import sys
 from loop_closure import *
 if __name__ == '__main__':
@@ -1510,7 +1511,7 @@ if __name__ == '__main__':
     # # detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, optimizer, rel_poses)
     # # print(consensus_matching(3439, 437))
     # a = 1
-
+    # random.seed(1)
     mode = "loop_closure"
     if len(sys.argv) > 1:
         mode = sys.argv[1]
@@ -1521,23 +1522,35 @@ if __name__ == '__main__':
     needed_indices = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras - 1]
     real_locs_keyframes = real_locs[needed_indices].T
     stereo_k = get_stereo_k()
-    database = open_database()
+    # database = create_database()
+    # save_database(database)
+    database = open_database("old_db/database")
     if mode == "initial_estimate":
         est_locs = get_pnp_locations(database)
         real_locs = read_poses().T
         pnp_ext_mat = get_pnp_extrinsic_mat(database)
         plot_trajectury(est_locs[0], est_locs[2], real_locs[0], real_locs[2], "initial_estimate_result")
         absolute_estimation_error(real_locs, est_locs, real_ext_mat, pnp_ext_mat, "PnP")
-        new_reprojection_error(database)
+        new_reprojection_error(database, False)  # reprojection and factor error
+        relative_estimation_error(100, real_ext_mat, pnp_ext_mat, "PnP")
+        relative_estimation_error(300, real_ext_mat, pnp_ext_mat, "PnP")
+        relative_estimation_error(800, real_ext_mat, pnp_ext_mat, "PnP")
         pass
     elif mode == "bundle_adjustment":
-        est_locs = np.zeros((3450, 3))
-        for i in range(0, 3450, JUMP):
-            est_locs[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
-        est_ext_mat = get_bundle_extrinsic_mat(database)
-        plot_trajectury(est_locs.T[0], est_locs.T[2], real_locs_keyframes[0], real_locs_keyframes[2], "bundle_adjustment_results")
-        absolute_estimation_error(real_locs.T, est_locs.T, real_ext_mat, est_ext_mat, "bundle_adjustment")
-        new_reprojection_error(database)
+        perform_bundle(database)
+        est_locs_bundle = np.zeros((3450, 3))
+        for i in range(0, 3450):
+            # if i%19 ==0 :
+            #     print(i)
+            #     print(database.frames[i].get_transformation_from_zero_bundle())
+            est_locs_bundle[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
+        est_ext_mat_bundle = get_bundle_extrinsic_mat(database)
+        plot_trajectury(est_locs_bundle.T[0], est_locs_bundle.T[2], real_locs.T[0], real_locs.T[2], "bundle_adjustment_results")
+        absolute_estimation_error(real_locs.T, est_locs_bundle.T, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
+        new_reprojection_error(database, True)  # reprojection and factor error
+        relative_estimation_error(100, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
+        relative_estimation_error(300, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
+        relative_estimation_error(800, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
     elif mode == "pose_graph":
         all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
         plot_trajectory_from_result(result, "pose_graph_results", 3450)
@@ -1549,12 +1562,15 @@ if __name__ == '__main__':
         #
         # l = read_poses().T
         # l2 = locations.T
-        # plot_trajectury(l2[0], l2[2], l[0], l[2])
+        # plot_trajectury(l2[0], l2[2], l[0], l[2], "new_trj_bundle_friday")
     elif mode == "loop_closure":
         all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
         res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
         plot_trajectory_from_result(res, "loop_closure_results", 3450)
         get_absolute_loop_closure_error(res)
+        marginals_before = gtsam.Marginals(graph, result)
+        marginals_after = gtsam.Marginals(new_graph, res)
+        plot_uncertainty_graph(marginals_before, marginals_after)
     elif mode == "all":
         pass
     elif mode == "database":

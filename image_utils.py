@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from enum import IntEnum
 from collections import namedtuple
@@ -536,4 +538,17 @@ class DataBase:
         plt.ylabel('track #')
         plt.title('track length histogram')
         plt.savefig("track_length_histogram.png")
+        plt.clf()
+
+    def num_of_matches_per_frame_graph(self):
+        """
+        This function creates and plot the matches number per fame graph.
+        """
+        matches_num = [frame.matches_num for frame in self.frames]
+        plt.figure(figsize=(12, 5))
+        plt.plot(matches_num)
+        plt.xlabel('frame')
+        plt.ylabel('matches number')
+        plt.title('matches number graph')
+        plt.savefig("matches_number_graph.png")
         plt.clf()

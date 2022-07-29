@@ -107,7 +107,7 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
     print("max: ",angle_error.max())
     x = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras-1]
-    if estimation_type == "PnP":
+    if estimation_type == "PnP" or estimation_type == "bundle_adjustment":
         x = [i for i in range(num_of_cameras)]
 
     plt.figure(figsize=(15, 5))
@@ -117,6 +117,8 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     plt.plot(x, y_error, label="y error")
     plt.plot(x, z_error, label="z error")
     plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (m)')
     plt.title(f"Absolute {estimation_type} estimation error")
     plt.savefig(f"absolute_{estimation_type}_estimation_error.png")
     plt.clf()
@@ -124,12 +126,19 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     plt.figure(figsize=(15, 5))
     plt.plot(x, angle_error, label="angle error")
     plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (deg)')  # todo degree or rad
     plt.title(f"Absolute {estimation_type} angle estimation error")
     plt.savefig(f"absolute_{estimation_type}_angle_estimation_error.png")
     plt.clf()
 
 
-def new_reprojection_error(database: DataBase):
+def new_reprojection_error(database: DataBase, is_estimation_type_bundle: bool):
+    """
+    This function calculate the reprojection and factor median error for estimation_type.
+    :param database:
+    :return:
+    """
     tracks_bigger_than_40 = list(np.array(database.tracks)[np.array(database.tracks) > 40])
     random_tracks = np.array(tracks_bigger_than_40)[np.random.choice(len(tracks_bigger_than_40), 10, replace=False)]
     left_errors, right_errors = defaultdict(list),  defaultdict(list)  # track len : [errors]
@@ -138,10 +147,11 @@ def new_reprojection_error(database: DataBase):
     f_x, f_y, skew, c_x, c_y, baseline = k[0][0], k[1][1], k[0][1], k[0][2], k[1][2], m2[0][3]
     stereo_k = gtsam.Cal3_S2Stereo(f_x, f_y, skew, c_x, c_y, -baseline)
     for random_track in random_tracks:
-        start_frame_trans = database.frames[random_track.frame_ids[0]].transformation_from_zero
+        start_frame_trans = database.frames[random_track.frame_ids[0]].transformation_from_zero if not is_estimation_type_bundle \
+            else database.frames[random_track.frame_ids[0]].transformation_from_zero
 
         last_frame_stereo_camera, last_frame_pose = create_stereo_camera(database, random_track.frame_ids[-1], stereo_k,
-                                                                         start_frame_trans)
+                                                                         start_frame_trans, is_estimation_type_bundle)
         point_3d = last_frame_stereo_camera.backproject(gtsam.StereoPoint2(*random_track.track_instances[-1]))
 
         left_error, right_error = [], []
@@ -157,7 +167,7 @@ def new_reprojection_error(database: DataBase):
             if i == len(random_track.frame_ids) - 1:
                 break
             frame_symbol = gtsam.symbol('x', i + 1)  # camera i
-            curr_camera, frame_pose = create_stereo_camera(database, frame_idx, stereo_k, start_frame_trans)
+            curr_camera, frame_pose = create_stereo_camera(database, frame_idx, stereo_k, start_frame_trans, is_estimation_type_bundle)
             projected_p = curr_camera.project(point_3d)
             left_pt = np.array([projected_p.uL(), projected_p.v()])
             right_pt = np.array([projected_p.uR(), projected_p.v()])
@@ -190,20 +200,32 @@ def new_reprojection_error(database: DataBase):
     for k, v in factor_errors.items():
         factor_medians[k] = np.median(v)
 
-    plot_projection_error('reprojection error', medians_left, medians_right, file_name="reprojection_error")
-    plot_projection_error('factor error', factor_medians, file_name="factor_error")
+    name = "_bundle_adjustment" if is_estimation_type_bundle  else "_PnP"
+    plot_projection_error('reprojection error', medians_left, medians_right, file_name="reprojection_error"+name)
+    plot_projection_error('factor error', factor_medians, file_name="factor_error"+name)
 
 
 def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3], estimated_ext_mat: List[gtsam.Pose3], estimation_type: str) -> None:
+    """
+    This function calculate the relative pose estimation error compared to the ground truth relative pose
+    evaluated on sequence length of sequence_len.
+    """
     # real_relative_poses = []
     # estimated_relative_poses = []
-    angle_error = np.zeros((3450-sequence_len, 3))
 
-    real_locations = np.zeros((3450-sequence_len, 3))
-    estimated_locations = np.zeros((3450-sequence_len, 3))
+    all_distance_travelled = []
+    norm_all_total_distance_error = []
+    x_all_total_distance_error = []
+    y_all_total_distance_error = []
+    z_all_total_distance_error = []
+    all_angle_error = []
     for i in range(0, 3450-sequence_len):
         distance_travelled = 0
-        total_distance_error = 0
+        norm_total_distance_error = 0
+        x_total_distance_error = 0
+        y_total_distance_error = 0
+        z_total_distance_error = 0
+        angle_error = 0
         for j in range(sequence_len):
             real_pose_first = real_ext_mat[i + j]
             real_pose_second = real_ext_mat[i + j + 1]
@@ -219,33 +241,53 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
             relative_real = real_pose_first.between(real_pose_second)
 
             relative_error_pose = relative_est.between(relative_real)
-            total_distance_error += np.linalg.norm(relative_error_pose.translation())
+            norm_total_distance_error += np.linalg.norm(relative_error_pose.translation())
+            x_total_distance_error += relative_error_pose.translation()[0]
+            y_total_distance_error += relative_error_pose.translation()[1]
+            z_total_distance_error += relative_error_pose.translation()[2]
+            angle_error += np.linalg.norm(relative_error_pose.rotation().matrix())
 
+        all_distance_travelled.append(distance_travelled)
+        norm_all_total_distance_error.append(norm_total_distance_error)
+        x_all_total_distance_error.append(x_total_distance_error)
+        y_all_total_distance_error.append(y_total_distance_error)
+        z_all_total_distance_error.append(z_total_distance_error)
+        all_angle_error.append(angle_error)
 
         # angle_error[i] = (real_angles-estimate_angles) /  # todo
 
-    real_locations = real_locations.T
-    estimated_locations = estimated_locations.T
-    error = np.abs(real_locations - estimated_locations)*100 / real_locations  # todo
-    print(error[1])
-    sq_error = error**2
-    norm = np.sqrt(sq_error[0] + sq_error[1] + sq_error[2])
-    x_error = error[0]
-    y_error = error[1]
-    z_error = error[2]
+    # real_locations = real_locations.T
+    # estimated_locations = estimated_locations.T
+    # error = np.abs(real_locations - estimated_locations)*100 / real_locations
+    # print(error[1])
+    # sq_error = error**2
+    # norm = np.sqrt(sq_error[0] + sq_error[1] + sq_error[2])
+    # x_error = error[0]
+    # y_error = error[1]
+    # z_error = error[2]
     # angle_error = (angle_error.T) ** 2
     # angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
-
     plt.figure(figsize=(15, 5))
-    plt.plot(norm, label="norm")
-    plt.plot(x_error, label="x error")
-    plt.plot(y_error, label="y error")
-    plt.plot(z_error, label="z error")
-    # plt.plot(angle_error, label="angle error")
+    plt.plot(np.array(norm_all_total_distance_error)/np.array(all_distance_travelled), label="distance error norm")
+    plt.plot(np.array(x_all_total_distance_error)/np.array(all_distance_travelled), label="x error")
+    plt.plot(np.array(y_all_total_distance_error)/np.array(all_distance_travelled), label="y error")
+    plt.plot(np.array(z_all_total_distance_error)/np.array(all_distance_travelled), label="z error")
     plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (m)')
     plt.title(f"relative {estimation_type} estimation error for sequence length of {sequence_len}")
     plt.savefig(f"relative_{estimation_type}_estimation_error_{sequence_len}.png")
     plt.clf()
+
+    plt.plot(np.array(all_angle_error)/np.array(all_distance_travelled), label="angle error")
+    plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (deg)')
+    plt.title(f"relative {estimation_type} estimation angle error for sequence length of {sequence_len}")
+    plt.savefig(f"relative_{estimation_type}_estimation_angle_error_{sequence_len}.png")
+    plt.clf()
+    average_total_norm = sum(norm_all_total_distance_error) / len(norm_all_total_distance_error)
+    print(f"The average error (norm) of sequence length {sequence_len} is: {average_total_norm}")
 
 
 def reprojection_error(database: DataBase) -> None:
@@ -444,10 +486,11 @@ def perform_bundle(database: DataBase) -> FloatNDArray:
     locations = np.zeros((3450, 3))
     jump = JUMP
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
+    current_transformation2 = np.hstack((np.eye(3), np.zeros((3, 1))))
     for i in range(0, 3450, jump):
         print(i)
         bundle_frames = list(range(i, min(i + jump, 3449) + 1))
-        error_before, error_after, last_frame_pose = perform_bundle_window(database, stereo_k, bundle_frames)[:3]
+        error_before, error_after, last_frame_pose, graph, result, frame_symbols, current_transformation2 = perform_bundle_window(database, stereo_k, bundle_frames, current_transformation2)
         R = last_frame_pose.rotation().matrix()
         t = last_frame_pose.translation()
         R_t = np.hstack((R, t[:, None]))
