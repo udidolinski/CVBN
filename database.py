@@ -127,16 +127,17 @@ def create_database(start_frame_id: int = 0, end_frame_id: int = 3449, start_tra
     gen = gen_track_id(start_track_id)
     for i, quad in tqdm(enumerate(create_quads(start_frame_id, end_frame_id)), desc="Creating DataBase", total=end_frame_id - start_frame_id + 1):
         current_transformation = frames[-1].get_transformation_from_zero()
-        percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+        percentage = len(quad.stereo_pair1.left_image.get_inliers_kps(FilterMethod.RECTIFICATION)) / len(quad.stereo_pair1.matches)
         frames[-1].set_inliers_percentage(round(percentage, 2))
+        frames[-1].set_matches_num(len(quad.stereo_pair1.matches))
         transformation_i_to_i_plus_1 = quad.get_relative_trans()
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
         frames.append(Frame(quad.stereo_pair2.idx))
         frames[-1].set_transformation_from_zero(transformation_0_to_i_plus_1)
         create_track(tracks, frames, quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP), quad, gen)
-    percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.PNP)) / len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.QUAD))
+    percentage = len(quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.RECTIFICATION)) / len(quad.stereo_pair2.matches)
     frames[-1].set_inliers_percentage(round(percentage, 2))
-    # print(frames[-2].get_transformation_from_zero())
+    frames[-1].set_matches_num(len(quad.stereo_pair2.matches))
     return DataBase(tracks, frames)
 
 
@@ -357,4 +358,4 @@ def present_statistics(database: DataBase) -> None:
 
 if __name__ == '__main__':
     database = create_database()
-    save_database(database, f"{DETECTOR.__name__[:-7]}_{NORM}_{DEVIATION_THRESHOLD}_{PNP_THRESHOLD}_{RANSAC_SUCCESS_PROB}")
+    save_database(database, "database")

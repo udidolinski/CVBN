@@ -96,10 +96,10 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     for i in list(range(0, num_of_cameras-1, jump))+[num_of_cameras-1]:
         estimate_angles = estimated_ext_mat[j].rotation().ypr()
         real_angles = real_ext_mat[j].rotation().ypr()
-        angle_error.append(real_angles-estimate_angles)
-        for k in range(3):
-            if abs(angle_error[j][k]) > np.pi:
-                angle_error[j][k] = 2*np.pi - abs(angle_error[j][k])
+        angle_error.append(np.abs(real_angles)-np.abs(estimate_angles))
+        # for k in range(3):
+        #     if abs(angle_error[j][k]) > np.pi:
+        #         angle_error[j][k] = 2*np.pi - abs(angle_error[j][k])
         j+=1
 
     angle_error = np.array(angle_error)
@@ -202,19 +202,25 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
     real_locations = np.zeros((3450-sequence_len, 3))
     estimated_locations = np.zeros((3450-sequence_len, 3))
     for i in range(0, 3450-sequence_len):
-        real_pose_c0 = real_ext_mat[i]
-        real_pose_ck = real_ext_mat[i+sequence_len]
-        real_relative_pose = real_pose_c0.between(real_pose_ck)
-        # real_relative_poses.append(real_relative_pose)
-        real_locations[i] = real_relative_pose.translation()
-        estimate_angles = real_relative_pose.rotation().ypr()
+        distance_travelled = 0
+        total_distance_error = 0
+        for j in range(sequence_len):
+            real_pose_first = real_ext_mat[i + j]
+            real_pose_second = real_ext_mat[i + j + 1]
 
-        est_pose_c0 = estimated_ext_mat[i]
-        est_pose_ck = estimated_ext_mat[i+sequence_len]
-        est_relative_pose = est_pose_c0.between(est_pose_ck)
-        # estimated_relative_poses.append(est_relative_pose)
-        estimated_locations[i] = est_relative_pose.translation()
-        real_angles = est_relative_pose.rotation().ypr()
+            real_loc_first = real_pose_first.translation()
+            real_loc_second = real_pose_second.translation()
+            distance_travelled += np.linalg.norm(real_loc_second - real_loc_first)
+
+            est_pose_first = estimated_ext_mat[i + j]
+            est_pose_second = estimated_ext_mat[i + j + 1]
+
+            relative_est = est_pose_first.between(est_pose_second)
+            relative_real = real_pose_first.between(real_pose_second)
+
+            relative_error_pose = relative_est.between(relative_real)
+            total_distance_error += np.linalg.norm(relative_error_pose.translation())
+
 
         # angle_error[i] = (real_angles-estimate_angles) /  # todo
 

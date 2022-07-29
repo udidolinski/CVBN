@@ -396,8 +396,15 @@ class Frame:
         self.frame_id = frame_id
         self.track_ids = []
         self.inliers_percentage = 0
+        self.matches_num = 0
         self.transformation_from_zero = np.zeros(1)
         self.transformation_from_after_bundle = np.zeros(1)
+
+    def get_matches_num(self) -> int:
+        return self.matches_num
+
+    def set_matches_num(self, matches_num) -> None:
+        self.matches_num = matches_num
 
     def get_inliers_percentage(self) -> float:
         """
