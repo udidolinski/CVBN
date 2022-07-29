@@ -44,6 +44,21 @@ def get_pnp_extrinsic_mat(database:DataBase) -> List[gtsam.Pose3]:
     return extrinsic_matrix_arr
 
 
+def get_bundle_extrinsic_mat(database:DataBase) -> List[gtsam.Pose3]:
+    """
+    This function create and returns all extrinsic matrices after PnP estimation from the database.
+    """
+    extrinsic_matrix_arr = []
+    for i in range(3450):
+        new_R, new_t = get_camera_to_global(database.frames[i].get_transformation_from_zero_bundle())
+        i_to_zero_trans = np.hstack((new_R, new_t))
+        new_R = i_to_zero_trans[:, :3]
+        new_t = i_to_zero_trans[:, 3]
+        frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+        extrinsic_matrix_arr.append(frame_pose)
+    return extrinsic_matrix_arr
+
+
 def read_ground_truth_extrinsic_mat(first_index: int = 0, last_index: int = 3450) -> List[gtsam.Pose3]:
     """
     This function create and returns all extrinsic matrices of ground truth.
@@ -74,17 +89,23 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     x_error = np.sqrt(sq_dist_error[0])
     y_error = np.sqrt(sq_dist_error[1])
     z_error = np.sqrt(sq_dist_error[2])
-    angle_error = np.zeros((num_of_cameras, 3))
+    angle_error = []
 
     # angle error calc
     j=0
-    for i in range(0, num_of_cameras, jump):
+    for i in list(range(0, num_of_cameras-1, jump))+[num_of_cameras-1]:
         estimate_angles = estimated_ext_mat[j].rotation().ypr()
-        real_angles = real_ext_mat[i].rotation().ypr()
-        angle_error[i] = real_angles-estimate_angles
+        real_angles = real_ext_mat[j].rotation().ypr()
+        angle_error.append(real_angles-estimate_angles)
+        for k in range(3):
+            if abs(angle_error[j][k]) > np.pi:
+                angle_error[j][k] = 2*np.pi - abs(angle_error[j][k])
         j+=1
-    # angle_error = (angle_error.T) ** 2
-    # angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+
+    angle_error = np.array(angle_error)
+    angle_error = (angle_error ** 2).T
+    angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+    print("max: ",angle_error.max())
     x = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras-1]
     if estimation_type == "PnP":
         x = [i for i in range(num_of_cameras)]
@@ -95,10 +116,16 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     plt.plot(x, x_error, label="x error")
     plt.plot(x, y_error, label="y error")
     plt.plot(x, z_error, label="z error")
-    # plt.plot(angle_error, label="angle error")
     plt.legend()
     plt.title(f"Absolute {estimation_type} estimation error")
     plt.savefig(f"absolute_{estimation_type}_estimation_error.png")
+    plt.clf()
+
+    plt.figure(figsize=(15, 5))
+    plt.plot(x, angle_error, label="angle error")
+    plt.legend()
+    plt.title(f"Absolute {estimation_type} angle estimation error")
+    plt.savefig(f"absolute_{estimation_type}_angle_estimation_error.png")
     plt.clf()
 
 
