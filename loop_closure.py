@@ -12,12 +12,15 @@ def get_absolute_loop_closure_error(result: gtsam.Values, num_of_cameras: int = 
     estimated_locations = []
     estimated_ext_mat = []
     needed_indices = [i for i in range(0, num_of_cameras, jump)] + [num_of_cameras-1]
+
     for i in needed_indices:
-        estimated_locations.append(result.atPose3(gtsam.symbol('x', i)).translation())
-        estimated_ext_mat.append(result.atPose3(gtsam.symbol('x', i)))
+        estimated_pose = result.atPose3(gtsam.symbol('x', i))
+        estimated_locations.append(estimated_pose.translation())
+        estimated_ext_mat.append(estimated_pose)
+    real_ext_mat = np.array(read_ground_truth_extrinsic_mat())[needed_indices]
     real_locs = read_poses()[needed_indices]
     estimated_locations = np.array(estimated_locations)
-    real_ext_mat = read_ground_truth_extrinsic_mat()
+
     absolute_estimation_error(real_locs.T, estimated_locations.T, real_ext_mat, estimated_ext_mat, jump=JUMP, estimation_type="loop_closure")
 
 
@@ -89,7 +92,7 @@ def consensus_matching(img_idx_1: int, img_idx_2: int) -> Tuple[float, List[Tupl
         present_consensus_matching(img_idx_1, img_idx_2, np.array(left_1_kp), np.array(left_2_kp),
                                    quad.stereo_pair1.left_image.get_inliers_kps(FilterMethod.RECTIFICATION),
                                    quad.stereo_pair2.left_image.get_inliers_kps(FilterMethod.RECTIFICATION))
-    return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs, quad.get_relative_trans()
+    return max_num_inliers / len(quad.get_left_left_kps_idx_dict()), locs, quad.get_relative_trans(), max_num_inliers
 
 
 def new_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bundle_frames: List[int], frame_poses: List[Union[gtsam.Pose3, None]], inliers_locs=None) -> Tuple[float, float, List[FloatNDArray], gtsam.NonlinearFactorGraph, gtsam.Values, List[int]]:
@@ -142,7 +145,6 @@ def new_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bundle_
             if landmark in to_remove_landmarks:
                 continue
             if factor.error(initialEstimate) > 1000000:
-                print("#"*100)
                 initialEstimate.erase(track_id_to_point[loc_idx][0])
                 to_remove_landmarks.add(landmark)
                 continue
@@ -214,14 +216,12 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
             cov, success = get_relative_covariance(all_nodes[c_n_idx], all_nodes[c_i_idx])
             rel_pos = all_poses[c_i_idx].between(all_poses[c_n_idx])
             mahalanobis_dist = mahalanobis_distance(cov, rel_pos)
-            if c_n_idx * JUMP == 1520 and c_i_idx * JUMP == 76:
-                print(f"Frames {c_n_idx * JUMP} and {c_i_idx * JUMP} are a {mahalanobis_dist} distance")
-                print(rel_pos)
             if mahalanobis_dist < MAHALANOBIS_DISTANCE_TEST:
                 print(f"Frames {c_n_idx * JUMP} and {c_i_idx * JUMP} are a {mahalanobis_dist} distance")
-                inliers_percentage, inliers_locs, rel_pose_between_match = consensus_matching(min(c_n_idx * JUMP, 3449), min(c_i_idx * JUMP, 3449))
-                if inliers_percentage >= CONSENSUS_MATCHING_THRESHOLD:
+                inliers_percentage, inliers_locs, rel_pose_between_match, num_inliers = consensus_matching(min(c_n_idx * JUMP, 3449), min(c_i_idx * JUMP, 3449))
+                if inliers_percentage >= CONSENSUS_MATCHING_THRESHOLD and num_inliers > 80:
                     print(f"Frames {c_n_idx * JUMP} and {c_i_idx * JUMP} are a possible match!")
+                    # print(f"inliers number: {num_inliers}")
                     count_loop_closure_success += 1
                     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_pose_between_match, [min(c_i_idx * JUMP, 3449), min(c_n_idx * JUMP, 3449)],
                                                              database, stereo_k, inliers_locs)
@@ -311,7 +311,7 @@ def plot_trajectory_from_result(result: gtsam.Values, title: str, num_of_cameras
         locations[min(i + jump, 3449)] = result.atPose3(gtsam.symbol('x', i)).translation()
 
     l = read_poses()
-    needed_indices = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras - 1]
+    needed_indices = [i for i in range(0, num_of_cameras - 1, JUMP)] + [num_of_cameras - 1]
     real_poses = l[needed_indices].T
     l2 = locations.T
     plot_trajectury(l2[0], l2[2], real_poses[0], real_poses[2], title)
@@ -385,35 +385,35 @@ def plot_trajectory(fignum: int, values: gtsam.Values, scale: float = 1, margina
 
 if __name__ == '__main__':
     num_of_cameras = 3450
-    database = open_database("database")
+    database = open_database("database_neww")
     # database = create_database()
-    real_ext_mat = read_ground_truth_extrinsic_mat()
-    pnp_ext_mat = get_pnp_extrinsic_mat(database)
-    l = read_poses()
-    needed_indices = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras - 1]
-    real_poses = l[needed_indices].T
-    l3 = get_pnp_locations(database)
-    absolute_estimation_error(l.T, l3, real_ext_mat, pnp_ext_mat)
-    l3 = l3.T[[i for i in range(0, num_of_cameras, JUMP)]]
-    l3 = l3.T
-    plot_trajectury(l3[0], l3[2], real_poses[0], real_poses[2], "new_after_pnp")
+    # real_ext_mat = read_ground_truth_extrinsic_mat()
+    # pnp_ext_mat = get_pnp_extrinsic_mat(database)
+    # l = read_poses()
+    # needed_indices = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras - 1]
+    # real_poses = l[needed_indices].T
+    # l3 = get_pnp_locations(database)
+    # absolute_estimation_error(l.T, l3, real_ext_mat, pnp_ext_mat)
+    # l3 = l3.T[[i for i in range(0, num_of_cameras, JUMP)]]
+    # l3 = l3.T
+    # plot_trajectury(l3[0], l3[2], real_poses[0], real_poses[2], "new_after_pnp")
 
     stereo_k = get_stereo_k()
     all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
     plot_trajectory_from_result(result, "new_after_pose")
-    get_absolute_pose_graph_error(all_poses)
-    # res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
-    # plot_trajectory_from_result(res, "new_after_loop")
+    # get_absolute_pose_graph_error(all_poses)
+    res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
+    plot_trajectory_from_result(res, "new_after_loop")
     # get_absolute_loop_closure_error(res)
     #get_absolute_loop_closure_error(res, jump=JUMP)
     # marginals_before = gtsam.Marginals(graph, result)
     # plot_local_error(l, l2, "absolute error in meters before loop closure")
 
-
-    locations = np.zeros((3450, 3))
-    for i in range(0, 3450, JUMP):
-        locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
-
-    l = read_poses().T
-    l2 = locations.T
-    plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth
+    #
+    # locations = np.zeros((3450, 3))
+    # for i in range(0, 3450, JUMP):
+    #     locations[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
+    #
+    # l = read_poses().T
+    # l2 = locations.T
+    # plot_trajectury(l2[0], l2[2], l[0], l[2])  # ploting the trajectory after bundle optimization compared to ground truth

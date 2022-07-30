@@ -20,10 +20,7 @@ def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_c
     for mat in estimated_ext_mat:
         estimated_locations.append(mat.translation())
     estimated_locations = np.array(estimated_locations)
-    print("real loc: ",real_locs.T.shape)
-    print("est loc: ", estimated_locations.T.shape)
-    print("real ext: ", len(real_ext_mat))
-    print("est ext: ", len(estimated_ext_mat))
+
     absolute_estimation_error(real_locs.T, estimated_locations.T, real_ext_mat, estimated_ext_mat, jump=JUMP, estimation_type="pose_graph")
 
 

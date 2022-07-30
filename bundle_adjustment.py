@@ -70,11 +70,18 @@ def read_ground_truth_extrinsic_mat(first_index: int = 0, last_index: int = 3450
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
             extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
+
+            temp_R = gtsam.Rot3(extrinsic_matrix[:, :3])
+            # if i % 19 == 0:
+            #     print(f"real angles before trans: {temp_R.ypr()}")
+
             new_R, new_t = get_camera_to_global(extrinsic_matrix)
             i_to_zero_trans = np.hstack((new_R, new_t))
             new_R = i_to_zero_trans[:, :3]
             new_t = i_to_zero_trans[:, 3]
             frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
+            # if i % 19 == 0:
+            #     print(f"real angles before trans: {gtsam.Rot3(new_R).ypr()}")
             extrinsic_matrix_arr.append(frame_pose)
             i += 1
     return extrinsic_matrix_arr
@@ -94,18 +101,36 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
     # angle error calc
     j=0
     for i in list(range(0, num_of_cameras-1, jump))+[num_of_cameras-1]:
+        # estimate_angles = estimated_ext_mat[j].rotation().ypr()
+        # real_angles = real_ext_mat[j].rotation().ypr()
+        # angle_error.append(np.abs(real_angles)-np.abs(estimate_angles))
+        # relative_pose = real_ext_mat[j].between(estimated_ext_mat[j])
+
         estimate_angles = estimated_ext_mat[j].rotation().ypr()
         real_angles = real_ext_mat[j].rotation().ypr()
-        angle_error.append(np.abs(real_angles)-np.abs(estimate_angles))
-        # for k in range(3):
-        #     if abs(angle_error[j][k]) > np.pi:
-        #         angle_error[j][k] = 2*np.pi - abs(angle_error[j][k])
+        mid_angle = abs(real_angles - estimate_angles)
+
+        # print(f"loop angles est index={i}: {estimate_angles}")
+        # print(f"loop angles real index={i}: {real_angles}")
+        angle_error.append(mid_angle)
+        for k in range(3):
+            if angle_error[j][k] > np.pi:
+                angle_error[j][k] = 2*np.pi - angle_error[j][k]
+
+        # print(f"loop angles relative index={i}: {angle_error[j]}")
+        #
+        # if real_angles[0] < -1 and estimate_angles[0] > 1:
+        #     print(f"est angles: {estimate_angles}")
+        #     print(f"real angles: {real_angles}")
+        #
+        #     print(f"new deg: { angle_error[j]}")
+
         j+=1
 
-    angle_error = np.array(angle_error)
+    angle_error = np.array(angle_error) * 180 / np.pi
+    angle_y_error = angle_error.T[1] # it's already absolute values
     angle_error = (angle_error ** 2).T
     angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
-    print("max: ",angle_error.max())
     x = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras-1]
     if estimation_type == "PnP" or estimation_type == "bundle_adjustment":
         x = [i for i in range(num_of_cameras)]
@@ -125,11 +150,28 @@ def absolute_estimation_error(real_locations: FloatNDArray, estimated_locations:
 
     plt.figure(figsize=(15, 5))
     plt.plot(x, angle_error, label="angle error")
+    mean_angle_error = round(np.mean(angle_error), 2)
+    median_angle_error = round(np.median(angle_error), 2)
+    plt.plot(x, [mean_angle_error for _ in range(len(angle_error))], label=f'Mean={mean_angle_error}', linestyle='--')
+    plt.plot(x, [median_angle_error for _ in range(len(angle_error))], label=f'Median={median_angle_error}', linestyle='--')
     plt.legend()
     plt.xlabel('frame')
-    plt.ylabel('Error (deg)')  # todo degree or rad
+    plt.ylabel('Error (deg)')
     plt.title(f"Absolute {estimation_type} angle estimation error")
     plt.savefig(f"absolute_{estimation_type}_angle_estimation_error.png")
+    plt.clf()
+
+    plt.figure(figsize=(15, 5))
+    plt.plot(x, angle_y_error, label="angle y error")
+    mean_angle_y_error = round(np.mean(angle_y_error), 2)
+    median_angle_y_error = round(np.median(angle_y_error), 2)
+    plt.plot(x, [mean_angle_y_error for _ in range(len(angle_y_error))], label=f'Mean={mean_angle_y_error}', linestyle='--')
+    plt.plot(x, [median_angle_y_error for _ in range(len(angle_y_error))], label=f'Median={median_angle_y_error}', linestyle='--')
+    plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (deg)')
+    plt.title(f"Absolute {estimation_type} angle y estimation error")
+    plt.savefig(f"absolute_{estimation_type}_angle_y_estimation_error.png")
     plt.clf()
 
 
@@ -219,6 +261,7 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
     y_all_total_distance_error = []
     z_all_total_distance_error = []
     all_angle_error = []
+    all_y_angle_error = []
     for i in range(0, 3450-sequence_len):
         distance_travelled = 0
         norm_total_distance_error = 0
@@ -226,6 +269,7 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
         y_total_distance_error = 0
         z_total_distance_error = 0
         angle_error = 0
+        angle_y_error = 0
         for j in range(sequence_len):
             real_pose_first = real_ext_mat[i + j]
             real_pose_second = real_ext_mat[i + j + 1]
@@ -234,6 +278,7 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
             real_loc_second = real_pose_second.translation()
             distance_travelled += np.linalg.norm(real_loc_second - real_loc_first)
 
+
             est_pose_first = estimated_ext_mat[i + j]
             est_pose_second = estimated_ext_mat[i + j + 1]
 
@@ -241,11 +286,17 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
             relative_real = real_pose_first.between(real_pose_second)
 
             relative_error_pose = relative_est.between(relative_real)
+
+
+
             norm_total_distance_error += np.linalg.norm(relative_error_pose.translation())
-            x_total_distance_error += relative_error_pose.translation()[0]
-            y_total_distance_error += relative_error_pose.translation()[1]
-            z_total_distance_error += relative_error_pose.translation()[2]
-            angle_error += np.linalg.norm(relative_error_pose.rotation().matrix())
+            x_total_distance_error += abs(relative_error_pose.translation()[0])
+            y_total_distance_error += abs(relative_error_pose.translation()[1])
+            z_total_distance_error += abs(relative_error_pose.translation()[2])
+            curr_angles = relative_error_pose.rotation().ypr()
+            angle_error += (np.linalg.norm(curr_angles) * 180) / np.pi
+            angle_y_error += (abs(curr_angles[1]) * 180) / np.pi
+
 
         all_distance_travelled.append(distance_travelled)
         norm_all_total_distance_error.append(norm_total_distance_error)
@@ -253,6 +304,7 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
         y_all_total_distance_error.append(y_total_distance_error)
         z_all_total_distance_error.append(z_total_distance_error)
         all_angle_error.append(angle_error)
+        all_y_angle_error.append(angle_y_error)
 
         # angle_error[i] = (real_angles-estimate_angles) /  # todo
 
@@ -267,27 +319,69 @@ def relative_estimation_error(sequence_len: int, real_ext_mat: List[gtsam.Pose3]
     # z_error = error[2]
     # angle_error = (angle_error.T) ** 2
     # angle_error = np.sqrt(angle_error[0] + angle_error[1] + angle_error[2])
+    per_norm = 100 * np.array(norm_all_total_distance_error)/np.array(all_distance_travelled)
+    per_x = 100 * np.array(x_all_total_distance_error)/np.array(all_distance_travelled)
+    per_y = 100 * np.array(y_all_total_distance_error)/np.array(all_distance_travelled)
+    per_z = 100 * np.array(z_all_total_distance_error)/np.array(all_distance_travelled)
+
     plt.figure(figsize=(15, 5))
-    plt.plot(np.array(norm_all_total_distance_error)/np.array(all_distance_travelled), label="distance error norm")
-    plt.plot(np.array(x_all_total_distance_error)/np.array(all_distance_travelled), label="x error")
-    plt.plot(np.array(y_all_total_distance_error)/np.array(all_distance_travelled), label="y error")
-    plt.plot(np.array(z_all_total_distance_error)/np.array(all_distance_travelled), label="z error")
+    plt.plot(per_norm, label="distance error norm")
+    plt.plot(per_x, label="x error")
+    plt.plot(per_y, label="y error")
+    plt.plot(per_z, label="z error")
     plt.legend()
     plt.xlabel('frame')
-    plt.ylabel('Error (m)')
+    plt.ylabel('Error (%)')
     plt.title(f"relative {estimation_type} estimation error for sequence length of {sequence_len}")
     plt.savefig(f"relative_{estimation_type}_estimation_error_{sequence_len}.png")
     plt.clf()
 
-    plt.plot(np.array(all_angle_error)/np.array(all_distance_travelled), label="angle error")
+
+    per_deg = np.array(all_angle_error)/np.array(all_distance_travelled)
+
+    average_total_deg = round(np.mean(per_deg), 4)
+    median_total_deg = round(np.median(per_deg), 4)
+    # print(f"The average error (degree) of sequence length {sequence_len} is: {average_total_deg}")
+    plt.plot(per_deg, label="angle error")
+    plt.plot([average_total_deg for _ in range(len(per_deg))], label=f'Mean={average_total_deg}', linestyle='--')
+    plt.plot([median_total_deg for _ in range(len(per_deg))], label=f'Median={median_total_deg}', linestyle='--')
     plt.legend()
     plt.xlabel('frame')
-    plt.ylabel('Error (deg)')
+    plt.ylabel('Error (deg/m)')
     plt.title(f"relative {estimation_type} estimation angle error for sequence length of {sequence_len}")
     plt.savefig(f"relative_{estimation_type}_estimation_angle_error_{sequence_len}.png")
     plt.clf()
-    average_total_norm = sum(norm_all_total_distance_error) / len(norm_all_total_distance_error)
-    print(f"The average error (norm) of sequence length {sequence_len} is: {average_total_norm}")
+    # print(f"The average error (norm) of sequence length {sequence_len} is: {average_total_norm}")
+
+    per_y_deg = np.array(all_y_angle_error)/np.array(all_distance_travelled)
+
+    average_total_y_deg = round(np.mean(per_y_deg), 5)
+    median_total_y_deg = round(np.median(per_y_deg), 5)
+    # print(f"The average error (degree) of sequence length {sequence_len} is: {average_total_deg}")
+    plt.plot(per_y_deg, label="angle y error")
+    plt.plot([average_total_y_deg for _ in range(len(per_y_deg))], label=f'Mean={average_total_y_deg}', linestyle='--')
+    plt.plot([median_total_y_deg for _ in range(len(per_y_deg))], label=f'Median={median_total_y_deg}', linestyle='--')
+    plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (deg/m)')
+    plt.title(f"relative {estimation_type} estimation angle error for sequence length of {sequence_len}")
+    plt.savefig(f"relative_{estimation_type}_estimation_y_angle_error_{sequence_len}.png")
+    plt.clf()
+
+    average_total_norm = round(np.mean(per_norm), 3)
+    median_total_norm = round(np.median(per_norm), 3)
+    plt.figure(figsize=(15, 5))
+    plt.plot(per_norm, label="distance error norm")
+    plt.plot([average_total_norm for _ in range(len(per_norm))], label=f'Mean={average_total_norm}', linestyle='--')
+    plt.plot([median_total_norm for _ in range(len(per_norm))], label=f'Median={median_total_norm}', linestyle='--')
+    plt.legend()
+    plt.xlabel('frame')
+    plt.ylabel('Error (%)')
+    plt.title(f"relative {estimation_type} estimation error for sequence length of {sequence_len}")
+    plt.savefig(f"relative_{estimation_type}_estimation_error_{sequence_len}.png")
+    plt.clf()
+
+
 
 
 def reprojection_error(database: DataBase) -> None:
@@ -468,12 +562,14 @@ def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bun
         # print(frame_idx)
         # print(frame_symbol)
         # print(new)
-        update_database_pose(database, new, frame_idx)
+
         pose = result.atPose3(frame_symbol)
         R = pose.rotation().matrix()
         t = pose.translation()
         R_t = np.hstack((R, t[:, None]))  # i -> start
         new = compute_extrinsic_matrix(R_t, current_transformation)
+        update_database_pose(database, new, frame_idx)
+
 
     return error_before, error_after, last_frame_pose, graph, result, frame_symbols, new
 

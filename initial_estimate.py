@@ -103,8 +103,13 @@ def print_feature_descriptors(descriptors1: NDArray[np.uint8], descriptors2: NDA
 
 
 def significance_test(img1: Image, img2: Image) -> None:
-    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3),
-                   dtype=np.uint8)
+    """
+    This function is for rejecting matches that have key points which can match to many key points (instead of to one unique key point) by a ratio.
+    :param img1:
+    :param img2:
+    :return:
+    """
+    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3),dtype=np.uint8)
     brute_force = cv2.BFMatcher(cv2.NORM_L1)
     matches = brute_force.knnMatch(img1.desc, img2.desc, k=2)
     ratio = 0.5
@@ -117,6 +122,11 @@ def significance_test(img1: Image, img2: Image) -> None:
 
 
 def plot_histogram(deviations: FloatNDArray) -> None:
+    """
+    This function plots the histogram of the deviations between the y pixels of two key points from that matched in a stereo image.
+    :param deviations:
+    :return:
+    """
     plt.hist(deviations, 50)
     plt.title("Histogram of deviations between matches")
     plt.ylabel("Number of matches")
@@ -125,6 +135,11 @@ def plot_histogram(deviations: FloatNDArray) -> None:
 
 
 def histogram_pattern(stereo_pair: StereoPair) -> FloatNDArray:
+    """
+    This function computes the deviations between the y pixels of two key points from that matched in a stereo image.
+    :param stereo_pair:
+    :return:
+    """
     deviations = np.zeros(len(stereo_pair.matches))
     for i, match in enumerate(stereo_pair.matches):
         y1 = stereo_pair.left_image.kps[match.queryIdx].pt[1]
@@ -138,6 +153,12 @@ def histogram_pattern(stereo_pair: StereoPair) -> FloatNDArray:
 
 
 def pattern_reject_matches(deviations: FloatNDArray, stereo_pair: StereoPair) -> None:
+    """
+    This function rejects matches that their deviations between the y pixels of the key were more than the DEVIATION_THRESHOLD.
+    :param deviations:
+    :param stereo_pair:
+    :return:
+    """
     stereo_pair.set_rectified_inliers_matches_idx(np.where(deviations <= DEVIATION_THRESHOLD)[0])
 
     left_image_rectified_inliers_kps, right_image_rectified_inliers_kps = [], []
@@ -154,6 +175,14 @@ def pattern_reject_matches(deviations: FloatNDArray, stereo_pair: StereoPair) ->
 
 
 def draw_good_and_bad_matches(stereo_pair: StereoPair, output_name1: str, output_name2: str, filter_method: FilterMethod) -> None:
+    """
+    This function plots inliers and outliers of the key points filtered by the filter method.
+    :param stereo_pair:
+    :param output_name1:
+    :param output_name2:
+    :param filter_method:
+    :return:
+    """
     img1, img2 = read_images(stereo_pair.idx, ImageColor.RGB)
     # print(f"length of inliers kps img1: {len(stereo_pair.left_image.get_inliers_kps(filter_method))}")
     # print(f"length of outliers kps img1: {len(stereo_pair.left_image.get_outliers_kps(filter_method))}")
@@ -176,6 +205,10 @@ def draw_good_and_bad_matches(stereo_pair: StereoPair, output_name1: str, output
 
 
 def read_cameras() -> Tuple[FloatNDArray, FloatNDArray, FloatNDArray]:
+    """
+    This function gets the R | t matrices of the ground truth cameras.
+    :return:
+    """
     with open(os.path.join(DATA_PATH, 'calib.txt')) as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
@@ -190,6 +223,14 @@ def read_cameras() -> Tuple[FloatNDArray, FloatNDArray, FloatNDArray]:
 
 
 def triangulate_point(P: FloatNDArray, Q: FloatNDArray, p_keypoint: KeyPoint, q_keypoint: KeyPoint) -> Tuple[FloatNDArray, np.float64]:
+    """
+    This function is triangulate a matched point from 2 key points from a stereo image.
+    :param P:
+    :param Q:
+    :param p_keypoint:
+    :param q_keypoint:
+    :return:
+    """
     A = np.array([P[2] * p_keypoint.pt[0] - P[0], P[2] * p_keypoint.pt[1] - P[1], Q[2] * q_keypoint.pt[0] - Q[0], Q[2] * q_keypoint.pt[1] - Q[1]])
     u, d, v_t = np.linalg.svd(A)
     our_p4d = v_t[-1]
@@ -198,11 +239,26 @@ def triangulate_point(P: FloatNDArray, Q: FloatNDArray, p_keypoint: KeyPoint, q_
 
 
 def is_our_triangulate_equal_cv(P: FloatNDArray, Q: FloatNDArray, p1: KeyPoint, p2: KeyPoint, cv_p3d: FloatNDArray) -> bool:
+    """
+    This function is a test to check whether our implentaion of a triangulation is the same as the opencv implementation.
+    :param P:
+    :param Q:
+    :param p1:
+    :param p2:
+    :param cv_p3d:
+    :return:
+    """
     our_p3d, lamda = triangulate_point(P, Q, p1, p2)
     return np.all(np.isclose(our_p3d, cv_p3d))
 
 
 def triangulate_all_points(matches: NDArray[DMatch], stereo_pair: StereoPair) -> FloatNDArray:
+    """
+    This function triangulates all the key points that matched in a stereo image.
+    :param matches:
+    :param stereo_pair:
+    :return:
+    """
     k, m1, m2 = read_cameras()
     P = k @ m1
     Q = k @ m2
@@ -222,6 +278,13 @@ def triangulate_all_points(matches: NDArray[DMatch], stereo_pair: StereoPair) ->
 
 
 def plot_triangulations(x: FloatNDArray, y: FloatNDArray, z: FloatNDArray) -> None:
+    """
+    This function plots the triangulations.
+    :param x:
+    :param y:
+    :param z:
+    :return:
+    """
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(x, y, z)
@@ -232,6 +295,15 @@ def plot_triangulations(x: FloatNDArray, y: FloatNDArray, z: FloatNDArray) -> No
 
 
 def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj") -> None:
+    """
+    This function plots the trajectory we got compared to the real one.
+    :param x:
+    :param z:
+    :param x2:
+    :param z2:
+    :param title:
+    :return:
+    """
     plt.scatter(x, z, c='blue', s=2)
     plt.scatter(x2, z2, c='red', s=2)
     # plt.xlabel("z")
@@ -243,6 +315,12 @@ def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: Floa
 
 
 def plot_locations(x: FloatNDArray, z: FloatNDArray) -> None:
+    """
+    This function plots the locations of the cameras.
+    :param x:
+    :param z:
+    :return:
+    """
     plt.scatter(x, z, c='blue', s=2)
     # plt.xlim(x[0]-100, x[0]+100)
     plt.xlabel("x")
@@ -252,6 +330,11 @@ def plot_locations(x: FloatNDArray, z: FloatNDArray) -> None:
 
 
 def match_stereo_image(img_idx: int) -> StereoPair:
+    """
+    This function creates a StereoPair object which contains all the matches between 2 images after filtering by the stereo pattern.
+    :param img_idx:
+    :return:
+    """
     img1, img2 = detect_key_points(img_idx)
     matches, img1_kps_to_matches_idx, img2_kps_to_matches_idx = match_key_points(img1, img2)
     stereo_pair = StereoPair(img1, img2, img_idx, matches)
@@ -262,6 +345,13 @@ def match_stereo_image(img_idx: int) -> StereoPair:
 
 
 def match_pair_images_points(img_idx1: int, img_idx2: int, curr_stereo_pair1: Union[StereoPair, None] = None) -> Quad:
+    """
+    This function 2 pairs of stereo images and creates a Quad object that contains them both.
+    :param img_idx1:
+    :param img_idx2:
+    :param curr_stereo_pair1:
+    :return:
+    """
     if curr_stereo_pair1 is None:
         stereo_pair1 = match_stereo_image(img_idx1)
     else:
@@ -275,6 +365,12 @@ def match_pair_images_points(img_idx1: int, img_idx2: int, curr_stereo_pair1: Un
 #     return {(match.queryIdx, match.trainIdx):i for i, match in enumerate(matches)}
 
 def index_dict_matches(matches: NDArray[DMatch]) -> Dict[int, Tuple[int, int]]:
+    """
+    This function returns a dictionary that maps a index of the key point from the left image to pair of the
+    index of the key point from right left image and the index of this specific match.
+    :param matches:
+    :return:
+    """
     return {match.queryIdx: (match.trainIdx, i) for i, match in enumerate(matches)}
 
 
@@ -467,14 +563,14 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
     i = 0
     while i <= num_iter:
         # print("first part: index and num_iter", i, num_iter)
-        if i == 1132:
+        if i == 355:
             break
         max_num_inliers, num_iter = ransac_helper(quad, k, max_num_inliers, True, p, s, num_iter)[:2]
         i += 1
     # Repeat 2
     if max_num_inliers < 4:
         return quad, max_num_inliers
-    for j in range(5):
+    for j in range(10):
         # print("secondb part: index and num_iter", j, num_iter)
         max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s, num_iter,
                                                                            quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
@@ -535,9 +631,24 @@ def compute_extrinsic_matrix(transformation_0_to_i: FloatNDArray,
     new_t = R2 @ t1 + t2
     return np.hstack((new_R, new_t[:, None]))
 
+def rotation_matrix_2_euler_angles(R):
+    sy = np.sqrt(R[0,0]**2 + R[1,0]**2)
+    singular = sy < 1e-6
+    if not singular:
+        x = np.arctan2(R[2,1], R[2,2])
+        y = np.arctan2(-R[2, 0], sy)
+        z = np.arctan2(R[1, 0], R[0,0])
+    else:
+        x = np.arctan2(-R[1,2], R[1,1])
+        y = np.arctan2(-R[2, 0], sy)
+        z = 0
+    return np.array([x,y,z])
 
 def read_poses(first_index: int = 0, last_index: int = 3450) -> FloatNDArray:
+    # from database import open_database
+    # from gtsam.gtsam import Rot3
     locations = np.zeros((last_index - first_index, 3))
+    # db = open_database("akaze_hamming_05_1_09999/database")
     i = 0
     with open(os.path.join(POSES_PATH, '00.txt')) as f:
         for l in f.readlines()[first_index:last_index]:
@@ -546,6 +657,26 @@ def read_poses(first_index: int = 0, last_index: int = 3450) -> FloatNDArray:
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
             extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
+            # a = extrinsic_matrix[:,:3]
+            # b = db.frames[i].transformation_from_zero[:,:3]
+            # a_rot = Rot3(a)
+            # b_rot = Rot3(b)
+            # if i == 3440:
+            #     print("######S######")
+            #     # print(a)
+            #     print(rotation_matrix_2_euler_angles(a))
+            #     print(a_rot.ypr())
+            #     print("######M######")
+            #     # print(b)
+            #     print(rotation_matrix_2_euler_angles(b))
+            #     print(b_rot.ypr())
+            #     print("######E######")
+            #
+            #     print(b_rot.ypr())
+            #     print("############")
+            #     print("######E######")
+            #     print("######E######")
+            #     print("######E######")
             ground_truth_loc = transform_rt_to_location(extrinsic_matrix)
             locations[i] = ground_truth_loc
             # print(f"location of camera {i}: {locations[i]}")
@@ -589,6 +720,6 @@ if __name__ == '__main__':
     # for i in range(3):
     #     num = random.randint(0, 3449)
     #     match_stereo_image(num)
-    est_locs = trajectory().T
     real_locs = read_poses().T
-    plot_local_error_traj(real_locs, est_locs, "Initial_Trajectory_Error")
+    # est_locs = trajectory().T
+    # plot_local_error_traj(real_locs, est_locs, "Initial_Trajectory_Error")
