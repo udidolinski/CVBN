@@ -1,5 +1,7 @@
+import math
 import random
 import numpy as np
+import tqdm
 from database import *
 from gtsam import gtsam, utils
 from gtsam.noiseModel import Gaussian
@@ -242,7 +244,7 @@ def new_reprojection_error(database: DataBase, is_estimation_type_bundle: bool):
     for k, v in factor_errors.items():
         factor_medians[k] = np.median(v)
 
-    name = "_bundle_adjustment" if is_estimation_type_bundle  else "_PnP"
+    name = "_bundle_adjustment" if is_estimation_type_bundle else "_PnP"
     plot_projection_error('reprojection error', medians_left, medians_right, file_name="reprojection_error"+name)
     plot_projection_error('factor error', factor_medians, file_name="factor_error"+name)
 
@@ -554,22 +556,16 @@ def perform_bundle_window(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, bun
     result = optimizer.optimize()
     error_after = optimizer.error()
     last_frame_pose = result.atPose3(frame_symbols[0])
-    print("first bundle total error before optimization: ", error_before)
-    print("first bundle total error after optimization: ", error_after)
+    # print("first bundle total error before optimization: ", error_before)
+    # print("first bundle total error after optimization: ", error_after)
     new = current_transformation
-    for frame_symbol, frame_idx in zip(frame_symbols[::-1], bundle_frames):
-        # np.set_printoptions(precision=2)
-        # print(frame_idx)
-        # print(frame_symbol)
-        # print(new)
-
+    for frame_symbol, frame_idx in zip(frame_symbols[::-1], bundle_frames):  # saving R_t after bundle to database
         pose = result.atPose3(frame_symbol)
         R = pose.rotation().matrix()
         t = pose.translation()
         R_t = np.hstack((R, t[:, None]))  # i -> start
         new = compute_extrinsic_matrix(R_t, current_transformation)
         update_database_pose(database, new, frame_idx)
-
 
     return error_before, error_after, last_frame_pose, graph, result, frame_symbols, new
 
@@ -583,8 +579,8 @@ def perform_bundle(database: DataBase) -> FloatNDArray:
     jump = JUMP
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     current_transformation2 = np.hstack((np.eye(3), np.zeros((3, 1))))
-    for i in range(0, 3450, jump):
-        print(i)
+    for i in tqdm(range(0, 3450, jump), desc="Performing bundle adjustment", total=(math.ceil(3450/jump))):
+        # print(i)
         bundle_frames = list(range(i, min(i + jump, 3449) + 1))
         error_before, error_after, last_frame_pose, graph, result, frame_symbols, current_transformation2 = perform_bundle_window(database, stereo_k, bundle_frames, current_transformation2)
         R = last_frame_pose.rotation().matrix()
