@@ -75,11 +75,8 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
     all_poses = [gtsam.Pose3()]
     rel_poses = [gtsam.Pose3()]
     jump = JUMP
-    for i in range(0, 3450, jump):
-        print(i)
+    for i in tqdm(range(0, 3450, jump), desc="Creating pose graph", total=(math.ceil(3450/jump))):
         pose_ck, ck, relative_marginal_covariance_mat, current_transformation2 = extract_relative_pose(database, stereo_k, i, min(i + jump, 3449), current_transformation2)
-        # todo: save the R_t in bundle_window instead
-        # update_database_pose(database, current_transformation, i)
         R = pose_ck.rotation().matrix()
         t = pose_ck.translation()
         R_t = np.hstack((R, t[:, None]))
@@ -101,8 +98,6 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
         curr_pose = relative_pose
         curr_symbol = ck
         curr_node = next_node
-    # update_database_pose(database, current_transformation, 3449)
-    # save_database(database, "db_after_bundle")
     error_before = graph.error(initialEstimate)
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initialEstimate)
     result = optimizer.optimize()

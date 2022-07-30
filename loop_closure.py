@@ -221,13 +221,13 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                 inliers_percentage, inliers_locs, rel_pose_between_match, num_inliers = consensus_matching(min(c_n_idx * JUMP, 3449), min(c_i_idx * JUMP, 3449))
                 if inliers_percentage >= CONSENSUS_MATCHING_THRESHOLD and num_inliers > 80:
                     print(f"Frames {c_n_idx * JUMP} and {c_i_idx * JUMP} are a possible match!")
-                    # print(f"inliers number: {num_inliers}")
+                    print(f"matches number: {num_inliers}")
+                    print(f"percentage number: {inliers_percentage}")
                     count_loop_closure_success += 1
                     relative_pose, covariance = small_bundle(rel_poses[c_i_idx], rel_pose_between_match, [min(c_i_idx * JUMP, 3449), min(c_n_idx * JUMP, 3449)],
                                                              database, stereo_k, inliers_locs)
 
                     all_nodes[c_i_idx].add_neighbor(all_nodes[c_n_idx], covariance)
-                    # all_nodes[c_n_idx].add_neighbor(all_nodes[c_i_idx], covariance)
                     factor = gtsam.BetweenFactorPose3(gtsam.symbol('x', min(c_i_idx * JUMP, 3449)), gtsam.symbol('x', min(c_n_idx * JUMP, 3449)), relative_pose,
                                                       covariance)
                     pose_graph.add(factor)
