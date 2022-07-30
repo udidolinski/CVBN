@@ -11,6 +11,7 @@ if __name__ == '__main__':
     real_locs = read_poses()
     needed_indices = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras - 1]
     real_locs_keyframes = real_locs[needed_indices].T
+    real_locs = real_locs.T
     stereo_k = get_stereo_k()
 
     # database = create_database()
@@ -37,8 +38,8 @@ if __name__ == '__main__':
         for i in range(num_of_cameras):
             est_locs_bundle[i] = transform_rt_to_location(database.frames[i].get_transformation_from_zero_bundle())
         est_ext_mat_bundle = get_bundle_extrinsic_mat(database)
-        plot_trajectury(est_locs_bundle.T[0], est_locs_bundle.T[2], real_locs.T[0], real_locs.T[2], "bundle_adjustment_results")
-        absolute_estimation_error(real_locs.T, est_locs_bundle.T, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
+        plot_trajectury(est_locs_bundle.T[0], est_locs_bundle.T[2], real_locs[0], real_locs[2], "bundle_adjustment_results")
+        absolute_estimation_error(real_locs, est_locs_bundle.T, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
         new_reprojection_error(database, True)  # reprojection and factor error
         relative_estimation_error(100, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
         relative_estimation_error(300, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
