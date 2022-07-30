@@ -228,9 +228,13 @@ def new_reprojection_error(database: DataBase, is_estimation_type_bundle: bool):
         initialEstimate.insert(l1, expected_l1)
 
         for i, factor in enumerate(factors[::-1]):
+            if i > 40:
+                break
             factor_errors[i].append(factor.error(initialEstimate))
 
         for i, (l_e, r_e) in enumerate(zip(left_error[::-1], right_error[::-1])):
+            if i > 40:
+                break
             left_errors[i].append(l_e)
             right_errors[i].append(r_e)
 
@@ -245,7 +249,8 @@ def new_reprojection_error(database: DataBase, is_estimation_type_bundle: bool):
         factor_medians[k] = np.median(v)
 
     name = "_bundle_adjustment" if is_estimation_type_bundle else "_PnP"
-    plot_projection_error('reprojection error', medians_left, medians_right, file_name="reprojection_error"+name)
+    title = "Bundle Adjustment" if is_estimation_type_bundle else "PnP"
+    plot_projection_error(f'{title} - reprojection error vs track length', medians_left, medians_right, file_name="reprojection_error"+name)
     plot_projection_error('factor error', factor_medians, file_name="factor_error"+name)
 
 

@@ -314,8 +314,8 @@ def plot_projection_error(title: str, left_error: List[float], right_error: List
     if right_error is not None:
         plt.plot(right_error, label="right error")
     plt.legend()
-    plt.xlabel('frame')
-    plt.ylabel('error')
+    plt.xlabel('distance from reference')
+    plt.ylabel('projection error (pixels)')
     plt.title(title)
     plt.savefig(f"{file_name}.png")
     plt.clf()
