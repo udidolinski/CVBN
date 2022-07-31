@@ -294,7 +294,7 @@ def plot_triangulations(x: FloatNDArray, y: FloatNDArray, z: FloatNDArray) -> No
     plt.show()
 
 
-def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj") -> None:
+def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj", loop_locs:FloatNDArray=None) -> None:
     """
     This function plots the trajectory we got compared to the real one.
     :param x:
@@ -306,6 +306,8 @@ def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: Floa
     """
     plt.scatter(x, z, c='blue', s=2)
     plt.scatter(x2, z2, c='red', s=2)
+    if loop_locs is not None:
+        plt.scatter(loop_locs.T[0], loop_locs.T[2], c='green', s=2)
     # plt.xlabel("z")
     # plt.ylabel("y")
     plt.title("trajecory of left cameras and ground truth locations")

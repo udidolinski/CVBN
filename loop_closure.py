@@ -211,6 +211,7 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
     count = 0
     count_loop_closure_success = 0
     curr_result = pose_result
+    loop_idx = []
     for c_n_idx in range(1, len(all_nodes)):
         for c_i_idx in range(c_n_idx):
             if c_n_idx - c_i_idx == 1:
@@ -246,12 +247,13 @@ def detect_loop_closure_candidates(all_poses: List[gtsam.Pose3], all_nodes: List
                     plot_trajectory(1, curr_result, marginals=marginals, scale=2, title="Locations as a 3D include the Covariance of the locations")
                     plt.savefig(f"new_traj_results/after_frames_{c_n_idx * JUMP}_{c_i_idx * JUMP}_traj_3d_cov.png")
                     plt.clf()
-
+                    loop_idx.append(min(c_i_idx * JUMP, 3449))
+                    loop_idx.append(min(c_n_idx * JUMP, 3449))
                 count += 1
                 # print("Mahalanobis distance:", mahalanobis_dist)
     print(count)
     print(f"{count_loop_closure_success} successful loop closure detected")
-    plot_trajectory_from_result(curr_result, "loop_closure_traj")
+    plot_trajectory_from_result(curr_result, "loop_closure_traj", loop_idx=loop_idx)
     # plot_trajectory(1, result, scale=2, title="Locations as a 3D")
     # plt.savefig(f"after_frames_{c_n_idx * JUMP}_{c_i_idx * JUMP}_traj_3d.png")
     # plt.clf()
@@ -313,7 +315,7 @@ def plot_uncertainty_graph(marginals_before: gtsam.Marginals, estimation_type:st
     plt.clf()
 
 
-def plot_trajectory_from_result(result: gtsam.Values, title: str, num_of_cameras: int = 3450) -> None:
+def plot_trajectory_from_result(result: gtsam.Values, title: str, num_of_cameras: int = 3450, loop_idx: List[int]=None) -> None:
     """
     This function plot the trajectory from a given result.
     """
@@ -325,8 +327,9 @@ def plot_trajectory_from_result(result: gtsam.Values, title: str, num_of_cameras
     l = read_poses()
     needed_indices = [i for i in range(0, num_of_cameras - 1, JUMP)] + [num_of_cameras - 1]
     real_poses = l[needed_indices].T
+    loop_locs = locations[loop_idx]
     l2 = locations.T
-    plot_trajectury(l2[0], l2[2], real_poses[0], real_poses[2], title)
+    plot_trajectury(l2[0], l2[2], real_poses[0], real_poses[2], title, loop_locs=loop_locs)
 
 def get_locations_from_result_graph(result: gtsam.Values) -> FloatNDArray:
     locations = np.zeros((3450, 3))

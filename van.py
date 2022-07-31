@@ -16,6 +16,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         mode = sys.argv[1]
 
+    sequence_len = [100, 300, 800]
     num_of_cameras = 3450
     real_ext_mat = read_ground_truth_extrinsic_mat()
     real_locs = read_poses()
@@ -26,7 +27,7 @@ if __name__ == '__main__':
 
     # database = create_database()
     # save_database(database)
-    database = open_database("database_neww")
+    database = open_database("database")
 
     if mode == "initial_estimate" or mode == "all":
         print("calculating initial estimate...")
@@ -36,9 +37,8 @@ if __name__ == '__main__':
         plot_trajectury(est_locs[0], est_locs[2], real_locs[0], real_locs[2], "initial_estimate_result")
         absolute_estimation_error(real_locs, est_locs, real_ext_mat, pnp_ext_mat, "PnP")
         new_reprojection_error(database, False)  # reprojection and factor error
-        relative_estimation_error(100, real_ext_mat, pnp_ext_mat, "PnP")
-        relative_estimation_error(300, real_ext_mat, pnp_ext_mat, "PnP")
-        relative_estimation_error(800, real_ext_mat, pnp_ext_mat, "PnP")
+        for i in sequence_len:
+            relative_estimation_error(i, real_ext_mat, pnp_ext_mat, "PnP")
         print("done calculating initial estimate.")
 
     if mode == "bundle_adjustment" or mode == "all":
@@ -51,9 +51,8 @@ if __name__ == '__main__':
         plot_trajectury(est_locs_bundle.T[0], est_locs_bundle.T[2], real_locs[0], real_locs[2], "bundle_adjustment_results")
         absolute_estimation_error(real_locs, est_locs_bundle.T, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
         new_reprojection_error(database, True)  # reprojection and factor error
-        relative_estimation_error(100, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
-        relative_estimation_error(300, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
-        relative_estimation_error(800, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
+        for i in sequence_len:
+            relative_estimation_error(i, real_ext_mat, est_ext_mat_bundle, "bundle_adjustment")
         print("done performing bundle adjustment.")
 
     if mode == "pose_graph" or mode == "all":
@@ -61,7 +60,7 @@ if __name__ == '__main__':
         all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
         marginals_before = gtsam.Marginals(graph, result)
         plot_uncertainty_graph(marginals_before, "Pose_Graph")
-        plot_trajectory_from_result(result, "pose_graph_results", 3450)
+        plot_trajectory_from_result(result, "pose_graph_results", num_of_cameras)
         get_absolute_pose_graph_error(all_poses)
         print("done creating pose graph.")
 
@@ -73,7 +72,7 @@ if __name__ == '__main__':
         res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
         init_locs = get_pnp_locations(database).T
         plot_all_results(result, res, init_locs)
-        plot_trajectory_from_result(res, "loop_closure_results", 3450)
+        plot_trajectory_from_result(res, "loop_closure_results", num_of_cameras)
         get_absolute_loop_closure_error(res)
         marginals_after = gtsam.Marginals(new_graph, res)
         plot_uncertainty_graph(marginals_after, "Loop_Closure")
