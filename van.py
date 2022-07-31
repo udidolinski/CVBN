@@ -1,7 +1,17 @@
-import random
 import sys
 from loop_closure import *
+
+
 if __name__ == '__main__':
+    """
+    Usage:
+    initial_estimate - calculating initial estimate, plots the results and the relevant graphs.
+    bundle_adjustment - performing bundle adjustment optimization, plots the results and the relevant graphs.
+    pose_graph - creating a pose graph, plots the results and the relevant graphs.
+    loop_closure - performing loop closure, plots the final results and the relevant graphs.
+    all - performing all the steps above and plots the results and the relevant graphs for each step.
+    database - present statistics information about thr database..
+    """
     mode = "all"
     if len(sys.argv) > 1:
         mode = sys.argv[1]
@@ -56,13 +66,18 @@ if __name__ == '__main__':
     if mode == "loop_closure" or mode == "all":
         print("start performing loop closure...")
         all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
+        marginals_before = gtsam.Marginals(graph, result)
         res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
         plot_trajectory_from_result(res, "loop_closure_results", 3450)
         get_absolute_loop_closure_error(res)
-        marginals_before = gtsam.Marginals(graph, result)
         marginals_after = gtsam.Marginals(new_graph, res)
         plot_uncertainty_graph(marginals_before, marginals_after)
         print("done performing loop closure.")
 
     if mode == "database":
+        print("The database created with the following parameters: ")
+        print(f"- Y pattern threshold: {DEVIATION_THRESHOLD}")
+        print(f"- AKAZE detector and BFMatcher with Hamming norm")
+        print(f"- Ransac success probability: {RANSAC_SUCCESS_PROB}")
+        print(f"- PnP threshold: {PNP_THRESHOLD}")
         present_statistics(database)
