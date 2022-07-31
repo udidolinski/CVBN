@@ -695,6 +695,7 @@ def trajectory() -> FloatNDArray:
         # print(i)
         # print("****************************************************************")
         current_quad = ransac(i, i + 1, k, curr_stereo_pair2)[0]
+
         transformation_i_to_i_plus_1, curr_stereo_pair2 = current_quad.get_relative_trans(), current_quad.stereo_pair2
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
         locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)

@@ -503,7 +503,7 @@ class DataBase:
         res = []
         for i in range(len(self.frames) - 1):
             res.append(len((set(self.frames[i].track_ids) & set(self.frames[i + 1].track_ids))))
-        plt.figure(figsize=(12, 5))
+        plt.figure(figsize=(15, 5))
         plt.plot(res)
         plt.xlabel('frame')
         plt.ylabel('outgoing tracks')
@@ -516,8 +516,11 @@ class DataBase:
         This function creates and plot the inliers percentage graph.
         """
         percentage = [frame.inliers_percentage for frame in self.frames]
-        plt.figure(figsize=(12, 5))
+        plt.figure(figsize=(15, 5))
         plt.plot(percentage)
+        mean_inliers_persentage_per_frame = round(np.mean(percentage), 2)
+        plt.plot([mean_inliers_persentage_per_frame for _ in range(len(percentage))], label=f'Mean={mean_inliers_persentage_per_frame}', linestyle='--')
+        plt.legend()
         plt.ylim(0, 1)
         plt.xlabel('frame')
         plt.ylabel('inliers percentage')
@@ -532,7 +535,7 @@ class DataBase:
         track_length = [len(track.frame_ids) for track in self.tracks]
         bins = np.arange(max(track_length) + 1)
         hist = np.histogram(track_length, bins)[0]
-        plt.figure(figsize=(12, 5))
+        plt.figure(figsize=(15, 5))
         plt.plot(hist)
         plt.xlabel('track length')
         plt.ylabel('track #')
@@ -545,8 +548,11 @@ class DataBase:
         This function creates and plot the matches number per fame graph.
         """
         matches_num = [frame.matches_num for frame in self.frames]
-        plt.figure(figsize=(12, 5))
+        plt.figure(figsize=(15, 5))
         plt.plot(matches_num)
+        mean_matches_per_frame = round(np.mean(matches_num))
+        plt.plot([mean_matches_per_frame for _ in range(len(matches_num))], label=f'Mean={mean_matches_per_frame}', linestyle='--')
+        plt.legend()
         plt.xlabel('frame')
         plt.ylabel('matches number')
         plt.title('matches number graph')
