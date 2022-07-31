@@ -328,6 +328,35 @@ def plot_trajectory_from_result(result: gtsam.Values, title: str, num_of_cameras
     l2 = locations.T
     plot_trajectury(l2[0], l2[2], real_poses[0], real_poses[2], title)
 
+def get_locations_from_result_graph(result: gtsam.Values) -> FloatNDArray:
+    locations = np.zeros((3450, 3))
+    jump = JUMP
+    for i in range(0, 3450, jump):
+        locations[min(i + jump, 3449)] = result.atPose3(gtsam.symbol('x', min(i + jump, 3449))).translation()
+    return locations.T
+
+
+def plot_all_results(pose_graph_result: gtsam.Values, loop_closure_results:gtsam.Values, initial_locations:FloatNDArray) -> None:
+    num_of_cameras = 3450
+    real_locations = read_poses()
+    needed_indices = [i for i in range(0, num_of_cameras - 1, JUMP)] + [num_of_cameras - 1]
+
+    real_poses = real_locations[needed_indices].T
+    init_locs_key_frames = initial_locations[needed_indices].T
+    pose_graph_locations = get_locations_from_result_graph(pose_graph_result)
+    loop_closure_locations = get_locations_from_result_graph(loop_closure_results)
+
+    plt.scatter(real_poses[0], real_poses[2], c='red', s=2, label='ground truth')
+    plt.scatter(init_locs_key_frames[0], init_locs_key_frames[2], c='blue', s=2, label='initial estimate')
+    plt.scatter(pose_graph_locations[0],  pose_graph_locations[2], c='orange', s=2, label='bundle adjustment')
+    plt.scatter(loop_closure_locations[0], loop_closure_locations[2], c='green', s=2, label='loop closure')
+    # plt.xlabel("z")
+    # plt.ylabel("y")
+    plt.title("trajectory of all estimations compared to the ground truth")
+    plt.ylim([-100, 500])
+    plt.legend()
+    plt.savefig(f"traj_all.png")
+    plt.clf()
 
 def present_consensus_matching(img1_idx: int, img2_idx: int, inliers_img1: NDArray[cv2.KeyPoint], inliers_img2:  NDArray[cv2.KeyPoint], all_keypoints1:  NDArray[cv2.KeyPoint], all_keypoints2:  NDArray[cv2.KeyPoint]) -> None:
     """

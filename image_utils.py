@@ -487,14 +487,14 @@ class DataBase:
         """
         return len(min(self.tracks, key=lambda x: len(x.frame_ids)).frame_ids)
 
-    def get_mean_number_of_frame_links(self) -> float:
+    def get_mean_number_of_frame_links(self) -> np.float64:
         """
         This function return the mean number of frame links of track in the database.
         """
-        tracks_sum = 0
-        for frame in self.frames:
-            tracks_sum += len(frame.track_ids)
-        return tracks_sum / len(self.frames)
+        res = []
+        for i in range(len(self.frames) - 1):
+            res.append(len((set(self.frames[i].track_ids) & set(self.frames[i + 1].track_ids))))
+        return np.mean(res)
 
     def create_connectivity_graph(self) -> None:
         """
@@ -503,8 +503,11 @@ class DataBase:
         res = []
         for i in range(len(self.frames) - 1):
             res.append(len((set(self.frames[i].track_ids) & set(self.frames[i + 1].track_ids))))
-        plt.figure(figsize=(15, 5))
+        plt.figure(figsize=(12, 4))
         plt.plot(res)
+        mean_outgoing_tracks = round(np.mean(res))
+        plt.plot([mean_outgoing_tracks for _ in range(len(res))], label=f'Mean={mean_outgoing_tracks}', linestyle='--')
+        plt.legend()
         plt.xlabel('frame')
         plt.ylabel('outgoing tracks')
         plt.title('connectivity graph')
@@ -516,7 +519,7 @@ class DataBase:
         This function creates and plot the inliers percentage graph.
         """
         percentage = [frame.inliers_percentage for frame in self.frames]
-        plt.figure(figsize=(15, 5))
+        plt.figure(figsize=(12, 4))
         plt.plot(percentage)
         mean_inliers_persentage_per_frame = round(np.mean(percentage), 2)
         plt.plot([mean_inliers_persentage_per_frame for _ in range(len(percentage))], label=f'Mean={mean_inliers_persentage_per_frame}', linestyle='--')
@@ -535,7 +538,7 @@ class DataBase:
         track_length = [len(track.frame_ids) for track in self.tracks]
         bins = np.arange(max(track_length) + 1)
         hist = np.histogram(track_length, bins)[0]
-        plt.figure(figsize=(15, 5))
+        plt.figure(figsize=(8, 4))
         plt.plot(hist)
         plt.xlabel('track length')
         plt.ylabel('track #')
@@ -548,7 +551,7 @@ class DataBase:
         This function creates and plot the matches number per fame graph.
         """
         matches_num = [frame.matches_num for frame in self.frames]
-        plt.figure(figsize=(15, 5))
+        plt.figure(figsize=(12, 4))
         plt.plot(matches_num)
         mean_matches_per_frame = round(np.mean(matches_num))
         plt.plot([mean_matches_per_frame for _ in range(len(matches_num))], label=f'Mean={mean_matches_per_frame}', linestyle='--')

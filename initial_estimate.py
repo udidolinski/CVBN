@@ -657,26 +657,7 @@ def read_poses(first_index: int = 0, last_index: int = 3450) -> FloatNDArray:
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
             extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
-            # a = extrinsic_matrix[:,:3]
-            # b = db.frames[i].transformation_from_zero[:,:3]
-            # a_rot = Rot3(a)
-            # b_rot = Rot3(b)
-            # if i == 3440:
-            #     print("######S######")
-            #     # print(a)
-            #     print(rotation_matrix_2_euler_angles(a))
-            #     print(a_rot.ypr())
-            #     print("######M######")
-            #     # print(b)
-            #     print(rotation_matrix_2_euler_angles(b))
-            #     print(b_rot.ypr())
-            #     print("######E######")
-            #
-            #     print(b_rot.ypr())
-            #     print("############")
-            #     print("######E######")
-            #     print("######E######")
-            #     print("######E######")
+
             ground_truth_loc = transform_rt_to_location(extrinsic_matrix)
             locations[i] = ground_truth_loc
             # print(f"location of camera {i}: {locations[i]}")
@@ -690,12 +671,12 @@ def trajectory() -> FloatNDArray:
     current_transformation = np.hstack((np.eye(3), np.zeros((3, 1))))
     locations = np.zeros((num_of_camerars, 3))
     curr_stereo_pair2 = None
-    for i in tqdm(range(num_of_camerars - 1)):
-        # print("****************************************************************")
-        # print(i)
-        # print("****************************************************************")
+    for i in range(num_of_camerars - 1):
+        print("****************************************************************")
+        print(i)
+        print("****************************************************************")
         current_quad = ransac(i, i + 1, k, curr_stereo_pair2)[0]
-
+        print(len(current_quad.stereo_pair1.left_image.kps))
         transformation_i_to_i_plus_1, curr_stereo_pair2 = current_quad.get_relative_trans(), current_quad.stereo_pair2
         transformation_0_to_i_plus_1 = compute_extrinsic_matrix(current_transformation, transformation_i_to_i_plus_1)
         locations[i + 1] = transform_rt_to_location(transformation_0_to_i_plus_1)
@@ -721,6 +702,6 @@ if __name__ == '__main__':
     # for i in range(3):
     #     num = random.randint(0, 3449)
     #     match_stereo_image(num)
-    real_locs = read_poses().T
-    # est_locs = trajectory().T
+    # real_locs = read_poses().T
+    est_locs = trajectory().T
     # plot_local_error_traj(real_locs, est_locs, "Initial_Trajectory_Error")

@@ -19,7 +19,7 @@ if __name__ == '__main__':
     num_of_cameras = 3450
     real_ext_mat = read_ground_truth_extrinsic_mat()
     real_locs = read_poses()
-    needed_indices = [i for i in range(0, num_of_cameras, JUMP)] + [num_of_cameras - 1]
+    needed_indices = [i for i in range(0, num_of_cameras-1, JUMP)] + [num_of_cameras - 1]
     real_locs_keyframes = real_locs[needed_indices].T
     real_locs = real_locs.T
     stereo_k = get_stereo_k()
@@ -71,6 +71,8 @@ if __name__ == '__main__':
         marginals_before = gtsam.Marginals(graph, result)
         plot_uncertainty_graph(marginals_before, "Pose_Graph")
         res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
+        init_locs = get_pnp_locations(database).T
+        plot_all_results(result, res, init_locs)
         plot_trajectory_from_result(res, "loop_closure_results", 3450)
         get_absolute_loop_closure_error(res)
         marginals_after = gtsam.Marginals(new_graph, res)
