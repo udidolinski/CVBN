@@ -409,7 +409,7 @@ def reprojection_error(database: DataBase) -> None:
     graph = gtsam.NonlinearFactorGraph()
     x_last = gtsam.symbol('x', len(random_track.frame_ids))
     graph.add(gtsam.NonlinearEqualityPose3(x_last, last_frame_pose))
-    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([1.0, 1.0, 1.0]))
+    stereo_model = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.1, 0.5, 0.1]))
     l1 = gtsam.symbol('l', 1)  # point
     initialEstimate = gtsam.Values()
     initialEstimate.insert(x_last, last_frame_pose)

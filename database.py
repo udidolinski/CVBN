@@ -353,7 +353,7 @@ def present_statistics(database: DataBase) -> None:
     database.create_connectivity_graph()
     database.inliers_percentage_graph()
     database.create_track_length_histogram_graph()
-    # database.num_of_matches_per_frame_graph()  # todo
+    database.num_of_matches_per_frame_graph()
     reprojection(database)
 
 

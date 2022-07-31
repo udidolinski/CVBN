@@ -1,5 +1,7 @@
 from typing import Iterable
 
+import matplotlib.pyplot as plt
+
 from pose_graph import *
 from gtsam import gtsam
 from gtsam.utils import plot
@@ -273,31 +275,41 @@ def get_uncertainty_size(ci: gtsam.symbol, cn: gtsam.symbol, marginals: gtsam.Ma
     relative_marginal_covariance_mat = relative_marginal_covariance_mat[6:, 6:]
     relative_marginal_covariance_mat = np.linalg.inv(relative_marginal_covariance_mat)
 
-    return np.linalg.det(relative_marginal_covariance_mat)
+    angles_marginal = relative_marginal_covariance_mat[:3, :3]
+    locations_marginal = relative_marginal_covariance_mat[3:, 3:]
+    return np.linalg.det(angles_marginal), np.linalg.det(locations_marginal)
 
 
-def plot_uncertainty_graph(marginals_before: gtsam.Marginals, marginals_after: gtsam.Marginals) -> None:
+def plot_uncertainty_graph(marginals_before: gtsam.Marginals, estimation_type:str) -> None:
     """
     This function plot the uncertainty graph.
     :param marginals_before: the covariance before optimization.
     :param marginals_after: the covariance after optimization.
     """
-    uncer_before = []
-    uncer_after = []
+    uncer_locs, uncer_angles = [], []
     c0 = gtsam.symbol("x", 0)
     jump = JUMP
     for i in range(0, 3450, jump):
         cn = gtsam.symbol("x", min(i+jump, 3449))
-        uncer_before.append(get_uncertainty_size(c0, cn, marginals_before))
-        uncer_after.append(get_uncertainty_size(c0, cn, marginals_after))
-    x = np.arange(len(uncer_before)) * jump
-    plt.plot(x, uncer_before, label="before loop closure")
-    plt.plot(x, uncer_after, label="after loop closure")
-    plt.legend()
+        angle, loc = get_uncertainty_size(c0, cn, marginals_before)
+        uncer_locs.append(loc)
+        uncer_angles.append(angle)
+    x = np.arange(len(uncer_locs)) * jump
+    plt.figure()
+    plt.ylim([0, 0.0011])
+    plt.plot(x, uncer_locs)
     plt.xlabel('frame')
     plt.ylabel('uncertainty')
-    plt.title("uncertainty size before and after loop closure")
-    plt.savefig("uncer.png")
+    plt.title(f"{estimation_type} - uncertainty size of locations vs frames")
+    plt.savefig(f"uncer_loc_{estimation_type}.png")
+    plt.clf()
+
+    plt.ylim([0, 1.5*1e-17])
+    plt.plot(x, uncer_angles)
+    plt.xlabel('frame')
+    plt.ylabel('uncertainty')
+    plt.title(f"{estimation_type} - uncertainty size of angles vs frames")
+    plt.savefig(f"uncer_angles_{estimation_type}.png")
     plt.clf()
 
 

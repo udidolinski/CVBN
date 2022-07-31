@@ -59,6 +59,8 @@ if __name__ == '__main__':
     if mode == "pose_graph" or mode == "all":
         print("start creating pose graph...")
         all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
+        marginals_before = gtsam.Marginals(graph, result)
+        plot_uncertainty_graph(marginals_before, "Pose_Graph")
         plot_trajectory_from_result(result, "pose_graph_results", 3450)
         get_absolute_pose_graph_error(all_poses)
         print("done creating pose graph.")
@@ -67,11 +69,12 @@ if __name__ == '__main__':
         print("start performing loop closure...")
         all_poses, all_nodes, graph, optimizer, rel_poses, l2, result = create_pose_graph(database, stereo_k)
         marginals_before = gtsam.Marginals(graph, result)
+        plot_uncertainty_graph(marginals_before, "Pose_Graph")
         res, new_graph = detect_loop_closure_candidates(all_poses, all_nodes, graph, database, stereo_k, result, rel_poses)
         plot_trajectory_from_result(res, "loop_closure_results", 3450)
         get_absolute_loop_closure_error(res)
         marginals_after = gtsam.Marginals(new_graph, res)
-        plot_uncertainty_graph(marginals_before, marginals_after)
+        plot_uncertainty_graph(marginals_after, "Loop_Closure")
         print("done performing loop closure.")
 
     if mode == "database":
