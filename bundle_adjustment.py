@@ -1,14 +1,11 @@
 import math
-import random
-import numpy as np
 import tqdm
 from database import *
 from gtsam import gtsam, utils
-from gtsam.noiseModel import Gaussian
 from collections import defaultdict
 from typing import List
-JUMP = 19
 
+JUMP = 19
 
 
 def get_stereo_k() -> gtsam.Cal3_S2Stereo:
@@ -72,18 +69,11 @@ def read_ground_truth_extrinsic_mat(first_index: int = 0, last_index: int = 3450
             l = l.split()
             extrinsic_matrix = np.array([float(i) for i in l])
             extrinsic_matrix = extrinsic_matrix.reshape(3, 4)
-
-            temp_R = gtsam.Rot3(extrinsic_matrix[:, :3])
-            # if i % 19 == 0:
-            #     print(f"real angles before trans: {temp_R.ypr()}")
-
             new_R, new_t = get_camera_to_global(extrinsic_matrix)
             i_to_zero_trans = np.hstack((new_R, new_t))
             new_R = i_to_zero_trans[:, :3]
             new_t = i_to_zero_trans[:, 3]
             frame_pose = gtsam.Pose3(gtsam.Rot3(new_R), new_t)
-            # if i % 19 == 0:
-            #     print(f"real angles before trans: {gtsam.Rot3(new_R).ypr()}")
             extrinsic_matrix_arr.append(frame_pose)
             i += 1
     return extrinsic_matrix_arr
@@ -183,8 +173,24 @@ def new_reprojection_error(database: DataBase, is_estimation_type_bundle: bool):
     :param database:
     :return:
     """
-    tracks_bigger_than_40 = list(np.array(database.tracks)[np.array(database.tracks) > 40])
-    random_tracks = np.array(tracks_bigger_than_40)[np.random.choice(len(tracks_bigger_than_40), 10, replace=False)]
+    # tracks_bigger_than_40 = list(np.array(database.tracks)[np.array(database.tracks) > 40])
+    tracks_bigger_1 = [track for track in database.tracks if len(track.frame_ids) <= 10]
+    # random_tracks_1 = list(np.array(tracks_bigger_1)[np.random.choice(len(tracks_bigger_1), 10, replace=False)])
+    random_tracks_1 = tracks_bigger_1[:10]
+
+    tracks_bigger_than_2 = [track for track in database.tracks if 10 < len(track.frame_ids) <= 20]
+    # random_tracks_2 = list(np.array(tracks_bigger_than_2)[np.random.choice(len(tracks_bigger_than_2), 10, replace=False)])
+    random_tracks_2 = tracks_bigger_than_2[:10]
+
+    tracks_bigger_than_3 = [track for track in database.tracks if 20 < len(track.frame_ids) <= 30]
+    # random_tracks_3 = list(np.array(tracks_bigger_than_3)[np.random.choice(len(tracks_bigger_than_3), 10, replace=False)])
+    random_tracks_3 = tracks_bigger_than_3[:10]
+
+    tracks_bigger_than_4 = [track for track in database.tracks if 30 < len(track.frame_ids) <= 40]
+    # random_tracks_4 = list(np.array(tracks_bigger_than_4)[np.random.choice(len(tracks_bigger_than_4), 10, replace=False)])
+    random_tracks_4 = tracks_bigger_than_4[:10]
+
+    random_tracks = random_tracks_1 + random_tracks_2 + random_tracks_3 + random_tracks_4
     left_errors, right_errors = defaultdict(list),  defaultdict(list)  # track len : [errors]
     factor_errors = defaultdict(list)
     k, m1, m2 = read_cameras()
