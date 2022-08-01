@@ -297,64 +297,10 @@ def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: Floa
     :param title:
     :return:
     """
-
-
-
     plt.scatter(x, z, c='blue', s=2, label='our trajectory')
     plt.scatter(x2, z2, c='red', s=2, label='ground truth location')
     if loop_locs is not None:
         plt.scatter(loop_locs.T[0], loop_locs.T[2], c='green', s=2, label="loop closure")
-
-    # r = 30
-    # jump = 50
-    # flag= True
-    # real_flag = np.pi / 2
-    # est_flag = np.pi / 2
-    # last_real_angle = real_y_angles[1]
-    # last_est_angle = est_y_angles[1]
-    # for i in range(1, len(real_y_angles), jump):
-    #     print(i)
-    #     print(f"real angle: {real_y_angles[i]}")
-    #     print(f"est angle: {est_y_angles[i]}")
-    #     est_dx, est_dy = compute_deltas(r, est_y_angles[i])
-    #
-    #     print(est_dx)
-    #     print(est_dy)
-    #
-    #     real_dx, real_dy = compute_deltas(r, real_y_angles[i])
-    #     arrow_real_properties = dict(
-    #         color="black",
-    #          arrowstyle= '->', lw=2, ls='-')
-    #     arrow_est_properties = dict(
-    #         color="green",
-    #           arrowstyle= '->', lw=2, ls='-')
-    #
-    #     # if -np.pi / 2 <= real_y_angles[i] < np.pi / 2:
-    #     delta_real_angle = real_y_angles[i] - last_real_angle
-    #     delta_est_angle = est_y_angles[i] - last_est_angle
-    #     if flag:
-    #         if real_dy < 0:
-    #             # print("pos")
-    #             # plt.arrow(x2[i], z2[i], real_dx, real_dy, width=0.1, color="yellow",head_width=1, shape="full")
-    #             plt.annotate("", xy=(x2[i] - real_dx, z2[i] - real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
-    #         else:
-    #             # print("neg")
-    #             # plt.arrow(x2[i], z2[i], -real_dx, -real_dy, width=0.1,color="yellow",head_width=1, shape="full")
-    #             plt.annotate("", xy=(x2[i] + real_dx, z2[i] + real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
-    #
-    #     # if -np.pi / 2 <= est_y_angles[i] < np.pi / 2:
-    #     else:
-    #         if real_dy < 0:
-    #             # plt.arrow(x[i], z[i], est_dx, est_dy, width=0.1,color="green",head_width=1, shape="full")
-    #             plt.annotate("", xy=(x2[i] + real_dx, z2[i] + real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
-    #         else:
-    #             plt.annotate("", xy=(x2[i] - real_dx, z2[i] - real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
-    #         # plt.arrow(x[i], z[i], -est_dx, -est_dy, width=0.1,color="green",head_width=1, shape="full")
-    #     real_flag = (real_flag + delta_real_angle) % (2 * np.pi)
-    #     flag = real_flag < np.pi
-    #     last_real_angle = real_y_angles[i]
-    #     last_est_angle = est_y_angles[i]
-    #     print()
     plt.title("trajectory of left cameras and ground truth locations")
     plt.legend()
     plt.savefig(f"{title}.png")
