@@ -4,12 +4,13 @@ from graph_utils import *
 from typing import List
 
 
-def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450, jump: int=JUMP) -> None:  # estimated_ext_mat is all poses (from create_pose_graph)
+def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_cameras: int = 3450,
+                                  jump: int = JUMP) -> None:  # estimated_ext_mat is all poses (from create_pose_graph)
     """
     This function plot the absolute pose graph estimation (without loop closure) error in X, Y, Z axis, the total
     error norm and the angle error.
     """
-    needed_indices = [i for i in range(0, num_of_cameras, jump)] + [num_of_cameras-1]
+    needed_indices = [i for i in range(0, num_of_cameras, jump)] + [num_of_cameras - 1]
     real_locs = read_poses()[needed_indices]
     real_ext_mat = np.array(read_ground_truth_extrinsic_mat())[needed_indices]
     estimated_locations = []
@@ -20,7 +21,9 @@ def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_c
     absolute_estimation_error(real_locs.T, estimated_locations.T, real_ext_mat, estimated_ext_mat, jump=JUMP, estimation_type="pose_graph")
 
 
-def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first: int, last: int, current_transformation: FloatNDArray=np.hstack((np.eye(3), np.zeros((3, 1))))) -> Tuple[gtsam.Pose3, gtsam.symbol, gtsam.noiseModel.Gaussian, FloatNDArray]:  # q 6.1
+def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, first: int, last: int,
+                          current_transformation: FloatNDArray = np.hstack((np.eye(3), np.zeros((3, 1))))) -> Tuple[
+    gtsam.Pose3, gtsam.symbol, gtsam.noiseModel.Gaussian, FloatNDArray]:  # q 6.1
     """
     This function extract the relative pose and the relative marginal covariance matrix between the frames first and last.
     """
@@ -47,7 +50,6 @@ def extract_relative_pose(database: DataBase, stereo_k: gtsam.Cal3_S2Stereo, fir
     return pose_ck, ck, relative_marginal_covariance_mat, current_transformation
 
 
-
 def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple[
     List[gtsam.Pose3], List[Node], gtsam.NonlinearFactorGraph, gtsam.LevenbergMarquardtOptimizer, List[gtsam.Pose3], FloatNDArray, gtsam.Values]:
     """
@@ -71,8 +73,9 @@ def create_pose_graph(database: DataBase, stereo_k: gtsam.StereoCamera) -> Tuple
     all_poses = [gtsam.Pose3()]
     rel_poses = [gtsam.Pose3()]
     jump = JUMP
-    for i in tqdm(range(0, 3450, jump), desc="Creating pose graph", total=(math.ceil(3450/jump))):
-        pose_ck, ck, relative_marginal_covariance_mat, current_transformation2 = extract_relative_pose(database, stereo_k, i, min(i + jump, 3449), current_transformation2)
+    for i in tqdm(range(0, 3450, jump), desc="Creating pose graph", total=(math.ceil(3450 / jump))):
+        pose_ck, ck, relative_marginal_covariance_mat, current_transformation2 = extract_relative_pose(database, stereo_k, i, min(i + jump, 3449),
+                                                                                                       current_transformation2)
         R = pose_ck.rotation().matrix()
         t = pose_ck.translation()
         R_t = np.hstack((R, t[:, None]))

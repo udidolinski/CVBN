@@ -281,13 +281,8 @@ def plot_triangulations(x: FloatNDArray, y: FloatNDArray, z: FloatNDArray) -> No
     ax.set_zlabel("z")
     plt.show()
 
-def compute_deltas(r, angle):
-    m = np.tan(angle)
-    dx = np.sqrt((r ** 2) / (m ** 2 + 1))
-    dy = m * dx
-    return dx, dy
-def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj", loop_locs: FloatNDArray = None,
-                    real_y_angles=None, est_y_angles=None) -> None:
+
+def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj", loop_locs: FloatNDArray = None) -> None:
     """
     This function plots the trajectory we got compared to the real one.
     :param x:
