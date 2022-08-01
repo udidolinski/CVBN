@@ -313,6 +313,9 @@ def plot_projection_error(title: str, left_error: List[float], right_error: List
     plt.plot(left_error, label="left error")
     if right_error is not None:
         plt.plot(right_error, label="right error")
+        plt.ylim([0,4])
+    else:
+        plt.ylim([0, 8])
     plt.legend()
     plt.xlabel('distance from reference')
     plt.ylabel('projection error (pixels)')
@@ -358,5 +361,7 @@ def present_statistics(database: DataBase) -> None:
 
 
 if __name__ == '__main__':
-    database = create_database()
-    save_database(database, "database_neww")
+    database = open_database()
+    for frame in database.frames:
+        print("frame id:",frame.frame_id)
+        print("matches num:", frame.matches_num)

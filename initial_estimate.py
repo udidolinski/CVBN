@@ -1,22 +1,18 @@
 import random
-
 import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+
 from image_utils import *
 from typing import Tuple
 import os
-from tqdm import tqdm
 
 DETECTOR = cv2.AKAZE_create
 NORM = cv2.NORM_HAMMING
 DEVIATION_THRESHOLD = 0.5
 PNP_THRESHOLD = 1
 RANSAC_SUCCESS_PROB = 0.9999
-
 RANSAC_NUM_SAMPLES = 4
-MAHALANOBIS_DISTANCE_TEST = 500000
-INLIERS_THRESHOLD = 100
-CONSENSUS_MATCHING_THRESHOLD = 0.6
-
 
 DATA_PATH = os.path.join("VAN_ex", "dataset", "sequences", "00")
 POSES_PATH = os.path.join("VAN_ex", "dataset", "poses")
@@ -109,14 +105,13 @@ def significance_test(img1: Image, img2: Image) -> None:
     :param img2:
     :return:
     """
-    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3),dtype=np.uint8)
+    res = np.empty((max(img1.mat.shape[0], img2.mat.shape[0]), img1.mat.shape[1] + img2.mat.shape[1], 3), dtype=np.uint8)
     brute_force = cv2.BFMatcher(cv2.NORM_L1)
     matches = brute_force.knnMatch(img1.desc, img2.desc, k=2)
     ratio = 0.5
     good_matches = np.array([m1 for m1, m2 in matches if m1.distance < ratio * m2.distance])
     random_matches = good_matches[np.random.randint(len(good_matches), size=20)]
-    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res,
-                    flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
+    cv2.drawMatches(img1.mat, img1.kps, img2.mat, img2.kps, random_matches, res, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
     cv2.imshow("Output random good matches", res)  # 1.4
     cv2.waitKey(0)
 
@@ -184,13 +179,6 @@ def draw_good_and_bad_matches(stereo_pair: StereoPair, output_name1: str, output
     :return:
     """
     img1, img2 = read_images(stereo_pair.idx, ImageColor.RGB)
-    # print(f"length of inliers kps img1: {len(stereo_pair.left_image.get_inliers_kps(filter_method))}")
-    # print(f"length of outliers kps img1: {len(stereo_pair.left_image.get_outliers_kps(filter_method))}")
-    # # print(f"length of inliers kps img2: {len(stereo_pair.right_image.get_inliers_kps(filter_method))}")
-    # # print(f"length of outliers kps img2: {len(stereo_pair.right_image.get_outliers_kps(filter_method))}")
-    # print(f"num of kps of image1: {len(stereo_pair.left_image.kps)}")
-    # print(f"num of kps of image2: {len(stereo_pair.right_image.kps)}")
-    # print(f"num of matches: {len(stereo_pair.matches)}")
     cv2.drawKeypoints(img1, stereo_pair.left_image.get_inliers_kps(filter_method), img1, (0, 128, 255))
     cv2.drawKeypoints(img1, stereo_pair.left_image.get_outliers_kps(filter_method), img1, (255, 255, 0))
 
@@ -293,8 +281,13 @@ def plot_triangulations(x: FloatNDArray, y: FloatNDArray, z: FloatNDArray) -> No
     ax.set_zlabel("z")
     plt.show()
 
-
-def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj", loop_locs:FloatNDArray=None) -> None:
+def compute_deltas(r, angle):
+    m = np.tan(angle)
+    dx = np.sqrt((r ** 2) / (m ** 2 + 1))
+    dy = m * dx
+    return dx, dy
+def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: FloatNDArray, title: str = "traj", loop_locs: FloatNDArray = None,
+                    real_y_angles=None, est_y_angles=None) -> None:
     """
     This function plots the trajectory we got compared to the real one.
     :param x:
@@ -304,13 +297,65 @@ def plot_trajectury(x: FloatNDArray, z: FloatNDArray, x2: FloatNDArray, z2: Floa
     :param title:
     :return:
     """
+
+
+
     plt.scatter(x, z, c='blue', s=2, label='our trajectory')
     plt.scatter(x2, z2, c='red', s=2, label='ground truth location')
     if loop_locs is not None:
         plt.scatter(loop_locs.T[0], loop_locs.T[2], c='green', s=2, label="loop closure")
-    # plt.xlabel("z")
-    # plt.ylabel("y")
-    plt.title("trajecory of left cameras and ground truth locations")
+
+    # r = 30
+    # jump = 50
+    # flag= True
+    # real_flag = np.pi / 2
+    # est_flag = np.pi / 2
+    # last_real_angle = real_y_angles[1]
+    # last_est_angle = est_y_angles[1]
+    # for i in range(1, len(real_y_angles), jump):
+    #     print(i)
+    #     print(f"real angle: {real_y_angles[i]}")
+    #     print(f"est angle: {est_y_angles[i]}")
+    #     est_dx, est_dy = compute_deltas(r, est_y_angles[i])
+    #
+    #     print(est_dx)
+    #     print(est_dy)
+    #
+    #     real_dx, real_dy = compute_deltas(r, real_y_angles[i])
+    #     arrow_real_properties = dict(
+    #         color="black",
+    #          arrowstyle= '->', lw=2, ls='-')
+    #     arrow_est_properties = dict(
+    #         color="green",
+    #           arrowstyle= '->', lw=2, ls='-')
+    #
+    #     # if -np.pi / 2 <= real_y_angles[i] < np.pi / 2:
+    #     delta_real_angle = real_y_angles[i] - last_real_angle
+    #     delta_est_angle = est_y_angles[i] - last_est_angle
+    #     if flag:
+    #         if real_dy < 0:
+    #             # print("pos")
+    #             # plt.arrow(x2[i], z2[i], real_dx, real_dy, width=0.1, color="yellow",head_width=1, shape="full")
+    #             plt.annotate("", xy=(x2[i] - real_dx, z2[i] - real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
+    #         else:
+    #             # print("neg")
+    #             # plt.arrow(x2[i], z2[i], -real_dx, -real_dy, width=0.1,color="yellow",head_width=1, shape="full")
+    #             plt.annotate("", xy=(x2[i] + real_dx, z2[i] + real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
+    #
+    #     # if -np.pi / 2 <= est_y_angles[i] < np.pi / 2:
+    #     else:
+    #         if real_dy < 0:
+    #             # plt.arrow(x[i], z[i], est_dx, est_dy, width=0.1,color="green",head_width=1, shape="full")
+    #             plt.annotate("", xy=(x2[i] + real_dx, z2[i] + real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
+    #         else:
+    #             plt.annotate("", xy=(x2[i] - real_dx, z2[i] - real_dy), xytext=(x2[i], z2[i]), arrowprops=arrow_real_properties)
+    #         # plt.arrow(x[i], z[i], -est_dx, -est_dy, width=0.1,color="green",head_width=1, shape="full")
+    #     real_flag = (real_flag + delta_real_angle) % (2 * np.pi)
+    #     flag = real_flag < np.pi
+    #     last_real_angle = real_y_angles[i]
+    #     last_est_angle = est_y_angles[i]
+    #     print()
+    plt.title("trajectory of left cameras and ground truth locations")
     plt.legend()
     plt.savefig(f"{title}.png")
     plt.clf()
@@ -327,7 +372,7 @@ def plot_locations(x: FloatNDArray, z: FloatNDArray) -> None:
     # plt.xlim(x[0]-100, x[0]+100)
     plt.xlabel("x")
     plt.ylabel("z")
-    plt.title("trajecory of left cameras")
+    plt.title("trajectory of left cameras")
     plt.show()
 
 
@@ -362,9 +407,6 @@ def match_pair_images_points(img_idx1: int, img_idx2: int, curr_stereo_pair1: Un
     left_left_matches = match_key_points(stereo_pair1.left_image, stereo_pair2.left_image, False)[0]
     return Quad(stereo_pair1, stereo_pair2, left_left_matches)
 
-
-# def index_dict_matches(matches: NDArray[DMatch]) -> Dict[int, Tuple[int, int]]:
-#     return {(match.queryIdx, match.trainIdx):i for i, match in enumerate(matches)}
 
 def index_dict_matches(matches: NDArray[DMatch]) -> Dict[int, Tuple[int, int]]:
     """
@@ -444,8 +486,7 @@ def pnp_helper(quad: Quad, k: FloatNDArray, p3p: bool = True, indices: Union[NDA
     return succeed, rvec, tvec
 
 
-def pnp(quad: Quad, k: FloatNDArray, p3p: bool = True, inliers_idx: Union[NDArray[np.int32], None] = None) -> Tuple[
-    FloatNDArray, FloatNDArray]:
+def pnp(quad: Quad, k: FloatNDArray, p3p: bool = True, inliers_idx: Union[NDArray[np.int32], None] = None) -> Tuple[FloatNDArray, FloatNDArray]:
     """
     This function perform PnP in order to get an R_t matrix.
     """
@@ -484,10 +525,6 @@ def compute_camera_locations(img_idx1, img_idx2):
 
     points = np.hstack((left_0_location, right_0_location, left_1_location, right_1_location))
 
-    # print("left 0:",points.T[0])
-    # print("right 0:", points.T[1])
-    # print("left 1:", points.T[2])
-    # print("right 1:", points.T[3])
     plot_triangulations(points[0], points[1], points[2])
 
 
@@ -505,8 +542,7 @@ def find_inliers(quad: Quad, k: FloatNDArray, current_transformation: FloatNDArr
     return len(inliers_idx), diff_real_and_model.shape[1] - len(inliers_idx), inliers_idx
 
 
-def perform_transformation_3d_points_to_pixels(R_t_1_2: FloatNDArray, k: FloatNDArray,
-                                               points_4d: FloatNDArray) -> FloatNDArray:
+def perform_transformation_3d_points_to_pixels(R_t_1_2: FloatNDArray, k: FloatNDArray, points_4d: FloatNDArray) -> FloatNDArray:
     """
     This function project 3d point using R_t_1_2 in order to find the point pixel.
     """
@@ -515,32 +551,6 @@ def perform_transformation_3d_points_to_pixels(R_t_1_2: FloatNDArray, k: FloatND
     pixels_3d[1] /= pixels_3d[2]
     model_pixels_2d = pixels_3d[:2]
     return model_pixels_2d
-
-
-# def present_inliers_and_outliers(quad):
-#     stereo_pair1_inliers_left_image_kps_idx = []
-#     for idx in quad.stereo_pair2.left_image._get_pnp_inliers_kps_idx():
-#         stereo_pair1_left_image_idx = quad.get_left_left_kps_idx_dict()[
-#             quad.stereo_pair2.left_image._get_quad_inliers_kps_idx()[idx]]
-#         stereo_pair1_inliers_left_image_kps_idx.append(stereo_pair1_left_image_idx)
-#     stereo_pair2_inliers_left_image_kps_idx = \
-#         quad.stereo_pair2.left_image._get_quad_inliers_kps_idx()[
-#             quad.stereo_pair2.left_image._get_pnp_inliers_kps_idx()]
-#     bad_keypoint1 = list(
-#         set(quad.stereo_pair1.left_image._get_quad_inliers_kps_idx()) - set(
-#             stereo_pair1_inliers_left_image_kps_idx))
-#     bad_keypoint2 = list(
-#         set(quad.stereo_pair2.left_image._get_quad_inliers_kps_idx()) - set(
-#             stereo_pair2_inliers_left_image_kps_idx))
-#     im1 = read_images(quad.stereo_pair1.idx, ImageColor.RGB)[0]
-#     im2 = read_images(quad.stereo_pair2.idx, ImageColor.RGB)[0]
-#     draw_good_and_bad_matches(im1, kps1_1,
-#                               stereo_pair1_inliers_left_image_kps_idx,
-#                               bad_keypoint1,
-#                               im2,
-#                               kps1_2, stereo_pair2_inliers_left_image_kps_idx,
-#                               bad_keypoint2, "left0",
-#                               "left1")
 
 
 def compute_num_of_iter(p: float, epsilon: float, s: int) -> np.float64:
@@ -588,7 +598,6 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
     # Repeat 1
     i = 0
     while i <= num_iter:
-        # print("first part: index and num_iter", i, num_iter)
         if i == 355:
             break
         max_num_inliers, num_iter = ransac_helper(quad, k, max_num_inliers, True, p, s, num_iter)[:2]
@@ -597,23 +606,11 @@ def ransac(img_idx1: int, img_idx2: int, k: FloatNDArray, curr_stereo_pair2: Ste
     if max_num_inliers < 4:
         return quad, max_num_inliers
     for j in range(10):
-        # print("secondb part: index and num_iter", j, num_iter)
         max_num_inliers, num_iter, is_transformation_close = ransac_helper(quad, k, max_num_inliers, False, p, s, num_iter,
                                                                            quad.stereo_pair2.left_image.get_inliers_kps_idx(FilterMethod.PNP))
         if is_transformation_close:
             break
 
-    # immg1 = draw_good_and_bad_matches(quad.stereo_pair1, "1", "2", FilterMethod.PNP)
-    # immg11 = draw_good_and_bad_matches(quad.stereo_pair1, "1", "2", FilterMethod.RECTIFICATION)
-    # immg21 = draw_good_and_bad_matches(quad.stereo_pair2, "1", "2", FilterMethod.QUAD)
-    # immg22 = draw_good_and_bad_matches(quad.stereo_pair2, "1", "2", FilterMethod.PNP)
-    #
-    # cv2.imshow("pair2 QUAD", immg21)
-    # cv2.imshow("pair2 PNP", immg22)
-    # cv2.waitKey(0)
-    # if img_idx1 == 0:
-    #     compute_2_3d_clouds(quad.get_relative_trans(), quad)
-    # present_inliers_and_outliers(*best_compute_lst2)
     return quad, max_num_inliers
 
 
@@ -682,17 +679,17 @@ def rotation_matrix_2_euler_angles(R):
     :param R: a rotation matrix.
     :return: the angles: azimuth, pitch, roll.
     """
-    sy = np.sqrt(R[0,0]**2 + R[1,0]**2)
+    sy = np.sqrt(R[0, 0] ** 2 + R[1, 0] ** 2)
     singular = sy < 1e-6
     if not singular:
-        x = np.arctan2(R[2,1], R[2,2])
+        x = np.arctan2(R[2, 1], R[2, 2])
         y = np.arctan2(-R[2, 0], sy)
-        z = np.arctan2(R[1, 0], R[0,0])
+        z = np.arctan2(R[1, 0], R[0, 0])
     else:
-        x = np.arctan2(-R[1,2], R[1,1])
+        x = np.arctan2(-R[1, 2], R[1, 1])
         y = np.arctan2(-R[2, 0], sy)
         z = 0
-    return np.array([x,y,z])
+    return np.array([x, y, z])
 
 
 def read_poses(first_index: int = 0, last_index: int = 3450) -> FloatNDArray:

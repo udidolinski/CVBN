@@ -1,7 +1,4 @@
-import numpy as np
-
 from bundle_adjustment import *
-from graph_utils import *
 from gtsam import gtsam, utils
 from graph_utils import *
 from typing import List
@@ -16,7 +13,6 @@ def get_absolute_pose_graph_error(estimated_ext_mat: List[gtsam.Pose3], num_of_c
     real_locs = read_poses()[needed_indices]
     real_ext_mat = np.array(read_ground_truth_extrinsic_mat())[needed_indices]
     estimated_locations = []
-    j=0
     for mat in estimated_ext_mat:
         estimated_locations.append(mat.translation())
     estimated_locations = np.array(estimated_locations)

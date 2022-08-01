@@ -1,10 +1,10 @@
 from typing import Iterable
-
-import matplotlib.pyplot as plt
-
 from pose_graph import *
 from gtsam import gtsam
 from gtsam.utils import plot
+
+MAHALANOBIS_DISTANCE_TEST = 500000
+CONSENSUS_MATCHING_THRESHOLD = 0.6
 
 
 def get_absolute_loop_closure_error(result: gtsam.Values, num_of_cameras: int = 3450, jump: int=JUMP) -> None:  # estimated_ext_mat is all poses (from create_pose_graph)
