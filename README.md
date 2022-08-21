@@ -150,9 +150,9 @@ c_location = transform_rt_to_location(transformation_a_to_c)
 ```
 The result we got:  
 <br/>
-<img src="/images/image4.jpeg"  width=60% height=60%>
+<img src="/images/image4.png"  width=60% height=60%>
 
-Finding the initial estimate took as 27 minutes, the buttle neck is to detect, extract and match the key-points as well as preforming consensus matching. In order to avoid doing those actions in the future we created database.  
+Finding the initial estimate took 27 minutes, the buttle neck is to detect, extract and match the key-points as well as preforming consensus matching. In order to avoid doing those actions in the future we created database.  
 
 ## Creating Database
 Our [database](https://github.com/udidolinski/CVBN/blob/be65bc29c4c4f79f3d64cdbfcd3b2187cda66de8/image_utils.py#L446) consist list of Frames and list of Tracks.
