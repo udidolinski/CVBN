@@ -327,7 +327,6 @@ Also the trajectory became closer to the ground truth, the final trajectory:
 ![](/images/final_traj.png)
 
 
-
 The error in meters after each step:
 ![](/images/absolute_pnp_estimation_error.png)  
 ![](/images/absolute_bundle_adjustment_estimation_error.png)  
